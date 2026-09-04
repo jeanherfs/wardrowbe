@@ -53,6 +53,7 @@ k8s/secrets.yaml.local
 k8s/*.secret.yaml
 
 # Local development
+.worktrees/
 *.local
 .claude/
 .serena/
