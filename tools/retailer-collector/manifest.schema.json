@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["retailer", "retailer_product_id", "image_path"],
+    "properties": {
+      "retailer": {"enum": ["zalando", "mango"]},
+      "retailer_product_id": {"type": "string", "minLength": 1},
+      "image_path": {"type": "string"},
+      "category": {"type": "string"},
+      "name": {"type": "string"},
+      "brand": {"type": "string"},
+      "source_url": {"type": "string", "format": "uri"},
+      "purchased_size": {"type": "string"},
+      "purchased_color": {"type": "string"},
+      "return_status": {"enum": ["kept", "returned"]},
+      "purchase_date": {"type": "string", "format": "date"}
+    }
+  }
+}

@@ -12,6 +12,10 @@ if [ "$(id -u)" = "0" ]; then
         usermod -o -u "$PUID" nextjs
     fi
 
+    # A development bind mount starts without build output; Next.js creates it
+    # after this entrypoint hands over to the dev server.
+    mkdir -p /app/.next
+
     # .next must stay writable by the remapped user for the prerender cache
     if [ "$(stat -c %u /app/.next)" != "$PUID" ]; then
         chown -R nextjs:nodejs /app/.next
