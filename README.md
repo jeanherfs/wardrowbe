@@ -188,6 +188,36 @@ docker compose exec backend alembic upgrade head
 docker compose logs -f frontend backend
 ```
 
+### One-command local setup
+
+The fork includes a local wrapper so you do not need Node.js, Python, or package
+managers installed on the host. Docker is the only host dependency; `./wardrobe
+setup` installs it automatically on supported macOS (Homebrew) and Debian/Ubuntu
+hosts, or starts Docker Desktop when it is already installed.
+
+```bash
+# Shows the available commands
+./wardrobe
+
+# Builds local images, starts the development stack, and applies migrations
+./wardrobe up
+
+# Inspect or stop the local stack
+./wardrobe status
+./wardrobe logs backend
+./wardrobe down
+```
+
+To import a collected retailer manifest, pass the app user ID, the JSON manifest,
+and its downloaded image directory. The wrapper mounts those two local paths
+read-only into the one-off importer container.
+
+```bash
+./wardrobe import --user-id <uuid> \
+  --manifest /path/to/items.json \
+  --image-root /path/to/images
+```
+
 ## AI Configuration
 
 Wardrowbe works with any OpenAI-compatible API. You need two types of models:

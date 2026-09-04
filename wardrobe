@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+compose_files=(-f docker-compose.yml -f docker-compose.dev.yml)
+
+if command -v luma >/dev/null 2>&1; then
+  eval "$(luma env)"
+  say_heading() { luma_heading "$1"; }
+  say_ok() { luma_ok "$1"; }
+  say_step() { luma_step "$1"; }
+  say_note() { luma_note "$1"; }
+  say_warn() { luma_warn "$1"; }
+  say_die() { luma_die "$1"; }
+else
+  say_heading() { printf '\n%s\n' "$1"; }
+  say_ok() { printf 'ok: %s\n' "$1"; }
+  say_step() { printf '-> %s\n' "$1"; }
+  say_note() { printf '   %s\n' "$1"; }
+  say_warn() { printf 'warning: %s\n' "$1" >&2; }
+  say_die() { printf 'error: %s\n' "$1" >&2; exit 1; }
+fi
+
+usage() {
+  cat <<'EOF'
+Usage: ./wardrobe <command>
+
+Commands:
+  setup                 install or start Docker when the host supports it
+  up [--no-build]       build, start, and migrate the local development stack
+  down                  stop the local stack
+  status                show service status
+  logs [service...]     follow service logs
+  migrate               apply database migrations
+  import --user-id ID --manifest FILE --image-root DIRECTORY
+                        import a retailer manifest and downloaded product images
+  help                  show this help
+EOF
+}
+
+compose() {
+  docker compose "${compose_files[@]}" "$@"
+}
+
+install_docker() {
+  case "$(uname -s)" in
+    Darwin)
+      command -v brew >/dev/null 2>&1 || say_die "Docker Desktop is required; install Homebrew first or install Docker Desktop manually"
+      say_step "installing Docker Desktop"
+      brew install --cask docker
+      open -a Docker
+      ;;
+    Linux)
+      command -v apt-get >/dev/null 2>&1 || say_die "install Docker Engine and the Docker Compose plugin, then rerun ./wardrobe setup"
+      say_step "installing Docker Engine and Docker Compose"
+      sudo apt-get update
+      sudo apt-get install -y docker.io docker-compose-plugin
+      sudo systemctl enable --now docker
+      ;;
+    *)
+      say_die "install Docker and Docker Compose for this operating system, then rerun ./wardrobe setup"
+      ;;
+  esac
+}
+
+ensure_docker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    install_docker
+  fi
+
+  if ! docker info >/dev/null 2>&1; then
+    case "$(uname -s)" in
+      Darwin)
+        say_step "starting Docker Desktop"
+        open -a Docker
+        ;;
+      Linux)
+        say_die "Docker is installed but not running; start the Docker service, then rerun this command"
+        ;;
+    esac
+
+    for _ in {1..30}; do
+      if docker info >/dev/null 2>&1; then
+        break
+      fi
+      sleep 2
+    done
+  fi
+
+  docker info >/dev/null 2>&1 || say_die "Docker did not become ready"
+  docker compose version >/dev/null 2>&1 || say_die "Docker Compose v2 is required"
+}
+
+wait_for_service() {
+  local url="$1"
+  local service="$2"
+  for _ in {1..30}; do
+    if curl --fail --silent --show-error "$url" >/dev/null 2>&1; then
+      return
+    fi
+    sleep 2
+  done
+  say_warn "the $service is still starting; inspect it with ./wardrobe logs $service"
+}
+
+run_migrations() {
+  say_step "applying database migrations"
+  compose exec -T backend alembic upgrade head
+}
+
+import_manifest() {
+  ensure_docker
+  [[ "${1:-}" == "--user-id" && -n "${2:-}" ]] || say_die "import requires --user-id ID"
+  local user_id="$2"
+  shift 2
+  [[ "${1:-}" == "--manifest" && -f "${2:-}" ]] || say_die "import requires --manifest FILE"
+  local manifest="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
+  shift 2
+  [[ "${1:-}" == "--image-root" && -d "${2:-}" ]] || say_die "import requires --image-root DIRECTORY"
+  local image_root="$(cd "$2" && pwd)"
+  shift 2
+  [[ $# -eq 0 ]] || say_die "unknown import option: $1"
+
+  run_migrations
+  say_step "importing retailer items"
+  compose run --rm --no-deps \
+    -v "$(dirname "$manifest"):/imports/manifest:ro" \
+    -v "$image_root:/imports/images:ro" \
+    backend python scripts/import_retailer_manifest.py \
+    --user-id "$user_id" \
+    --manifest "/imports/manifest/$(basename "$manifest")" \
+    --image-root /imports/images
+}
+
+start() {
+  local build=true
+  if [[ "${1:-}" == "--no-build" ]]; then
+    build=false
+  elif [[ $# -gt 0 ]]; then
+    say_die "unknown up option: $1"
+  fi
+
+  ensure_docker
+  say_heading "Wardrowbe"
+  if [[ "$build" == true ]]; then
+    say_step "building application dependencies"
+    compose build
+  fi
+  say_step "starting local services"
+  compose up -d
+  run_migrations
+  wait_for_service http://localhost:8000/api/v1/health backend
+  wait_for_service http://localhost:3000 frontend
+  say_ok "Wardrowbe is available at http://localhost:3000"
+}
+
+cd "$repo_root"
+command="${1:-help}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+
+case "$command" in
+  help|--help|-h) usage ;;
+  setup) ensure_docker; say_ok "Docker is ready" ;;
+  up) start "$@" ;;
+  down) ensure_docker; compose down ;;
+  status) ensure_docker; compose ps ;;
+  logs) ensure_docker; compose logs -f "$@" ;;
+  migrate) ensure_docker; run_migrations ;;
+  import) import_manifest "$@" ;;
+  *) say_die "unknown command: $command" ;;
+esac
