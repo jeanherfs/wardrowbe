@@ -58,7 +58,7 @@ Expected: FAIL because the schema rejects the fields.
 
 - [ ] **Step 3: Implement model, schemas and migration**
 
-Add enum-backed nullable columns. Add a PostgreSQL partial unique index named uq_clothing_items_retailer_identity over user_id, retailer, retailer_product_id, purchased_size, and purchased_color when retailer and product ID are non-null.
+Add enum-backed nullable columns. Add a PostgreSQL 15 partial unique index named uq_clothing_items_retailer_identity over user_id, retailer, retailer_product_id, purchased_size, and purchased_color when retailer and product ID are non-null, with NULLS NOT DISTINCT so a missing size or colour cannot bypass rerun protection.
 
 - [ ] **Step 4: Verify GREEN**
 
