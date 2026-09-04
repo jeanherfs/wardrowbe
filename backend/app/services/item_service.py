@@ -179,6 +179,29 @@ class ItemService:
         )
         return result.scalar_one_or_none()
 
+    async def find_by_retailer_identity(
+        self,
+        user_id: UUID,
+        retailer: str,
+        retailer_product_id: str,
+        purchased_size: str | None,
+        purchased_color: str | None,
+    ) -> ClothingItem | None:
+        result = await self.db.execute(
+            select(ClothingItem)
+            .where(
+                and_(
+                    ClothingItem.user_id == user_id,
+                    ClothingItem.retailer == retailer,
+                    ClothingItem.retailer_product_id == retailer_product_id,
+                    ClothingItem.purchased_size.is_not_distinct_from(purchased_size),
+                    ClothingItem.purchased_color.is_not_distinct_from(purchased_color),
+                )
+            )
+            .options(selectinload(ClothingItem.additional_images))
+        )
+        return result.scalar_one_or_none()
+
     async def create(
         self,
         user_id: UUID,
@@ -211,6 +234,14 @@ class ItemService:
             purchase_date=item_data.purchase_date,
             purchase_price=item_data.purchase_price,
             favorite=item_data.favorite,
+            retailer=item_data.retailer,
+            retailer_product_id=item_data.retailer_product_id,
+            source_url=item_data.source_url,
+            purchased_size=item_data.purchased_size,
+            purchased_color=item_data.purchased_color,
+            return_status=item_data.return_status,
+            fit_rating=item_data.fit_rating,
+            fit_notes=item_data.fit_notes,
         )
 
         self.db.add(item)
