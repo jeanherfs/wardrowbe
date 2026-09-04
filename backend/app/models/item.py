@@ -43,6 +43,24 @@ class TaggedBy(enum.StrEnum):
     manual = "manual"
 
 
+class Retailer(enum.StrEnum):
+    zalando = "zalando"
+    mango = "mango"
+
+
+class ReturnStatus(enum.StrEnum):
+    kept = "kept"
+    returned = "returned"
+
+
+class FitRating(enum.StrEnum):
+    too_small = "too_small"
+    slightly_small = "slightly_small"
+    fits = "fits"
+    slightly_large = "slightly_large"
+    too_large = "too_large"
+
+
 class ClothingItem(Base):
     __tablename__ = "clothing_items"
 
@@ -133,6 +151,17 @@ class ClothingItem(Base):
     purchase_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     notes: Mapped[str | None] = mapped_column(Text)
     favorite: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Retailer import and fit metadata
+    retailer: Mapped[Retailer | None] = mapped_column(Enum(Retailer, name="retailer"))
+    retailer_product_id: Mapped[str | None] = mapped_column(String(100))
+    source_url: Mapped[str | None] = mapped_column(String(2000))
+    purchased_size: Mapped[str | None] = mapped_column(String(50))
+    purchased_color: Mapped[str | None] = mapped_column(String(100))
+    return_status: Mapped[ReturnStatus | None] = mapped_column(Enum(ReturnStatus, name="return_status"))
+    fit_rating: Mapped[FitRating | None] = mapped_column(Enum(FitRating, name="fit_rating"))
+    fit_notes: Mapped[str | None] = mapped_column(Text)
+    imported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Lifecycle
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)

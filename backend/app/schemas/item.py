@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from app.utils.signed_urls import sign_image_url
+from app.models.item import FitRating, Retailer, ReturnStatus
 
 # Default wash intervals by clothing type (wears between washes)
 DEFAULT_WASH_INTERVALS: dict[str, int] = {
@@ -49,6 +50,14 @@ class ItemBase(BaseModel):
     purchase_date: date | None = None
     purchase_price: Decimal | None = Field(None, ge=0)
     favorite: bool = False
+    retailer: Retailer | None = None
+    retailer_product_id: str | None = Field(None, max_length=100)
+    source_url: str | None = Field(None, max_length=2000)
+    purchased_size: str | None = Field(None, max_length=50)
+    purchased_color: str | None = Field(None, max_length=100)
+    return_status: ReturnStatus | None = None
+    fit_rating: FitRating | None = None
+    fit_notes: str | None = None
 
 
 class ItemCreate(ItemBase):
@@ -70,6 +79,14 @@ class ItemUpdate(BaseModel):
     colors: list[str] | None = None
     primary_color: str | None = None
     wash_interval: int | None = None
+    retailer: Retailer | None = None
+    retailer_product_id: str | None = Field(None, max_length=100)
+    source_url: str | None = Field(None, max_length=2000)
+    purchased_size: str | None = Field(None, max_length=50)
+    purchased_color: str | None = Field(None, max_length=100)
+    return_status: ReturnStatus | None = None
+    fit_rating: FitRating | None = None
+    fit_notes: str | None = None
 
 
 class ItemResponse(ItemBase):
@@ -133,6 +150,7 @@ class ItemResponse(ItemBase):
     archive_reason: str | None = None
     created_at: datetime
     updated_at: datetime
+    imported_at: datetime | None = None
 
     @computed_field
     @property

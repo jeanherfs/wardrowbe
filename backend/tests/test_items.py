@@ -172,6 +172,41 @@ class TestItemCRUD:
         assert data["brand"] == "Test Brand"
 
     @pytest.mark.asyncio
+    async def test_update_item_persists_retailer_size_and_fit_metadata(
+        self, client: AsyncClient, test_user, auth_headers, db_session: AsyncSession
+    ):
+        item = ClothingItem(
+            user_id=test_user.id,
+            type="shorts",
+            image_path="test/item.jpg",
+            status=ItemStatus.ready,
+        )
+        db_session.add(item)
+        await db_session.commit()
+        await db_session.refresh(item)
+
+        response = await client.patch(
+            f"/api/v1/items/{item.id}",
+            json={
+                "retailer": "mango",
+                "retailer_product_id": "17062902",
+                "source_url": "https://shop.mango.com/nl/nl/p/heren/broeken/17062902",
+                "purchased_size": "40",
+                "purchased_color": "Kersenrood",
+                "return_status": "kept",
+                "fit_rating": "fits",
+                "fit_notes": "Comfortable at the waist",
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200, f"Unexpected error: {response.json()}"
+        data = response.json()
+        assert data["retailer"] == "mango"
+        assert data["purchased_size"] == "40"
+        assert data["fit_rating"] == "fits"
+
+    @pytest.mark.asyncio
     async def test_update_item_not_found(self, client: AsyncClient, test_user, auth_headers):
         """Test updating a non-existent item."""
         response = await client.patch(
