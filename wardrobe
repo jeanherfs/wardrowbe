@@ -4,6 +4,7 @@ set -Eeuo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 compose_files=(-f docker-compose.yml -f docker-compose.dev.yml)
+release_env="${WARDROBE_RELEASE_ENV:-$repo_root/.env.release}"
 
 if command -v luma >/dev/null 2>&1; then
   eval "$(luma env)"
@@ -39,8 +40,151 @@ Commands:
 EOF
 }
 
+release_usage() {
+  cat <<'EOF'
+Usage: ./wardrobe release <command>
+
+Commands:
+  up [--email EMAIL] [--display-name NAME] [--password PASSWORD]
+                        build, start, migrate, and optionally bootstrap release
+  setup                 install or start Docker and prepare release secrets
+  down                  stop the release stack
+  status                show release service status
+  logs [service...]     follow release service logs
+  migrate               apply release database migrations
+  bootstrap --email EMAIL
+                        create the local account and print a temporary password
+  import --user-id ID --manifest FILE --image-root DIRECTORY
+                        import a retailer manifest into the release database
+  backup DIRECTORY      create portable database and upload backups
+  restore DIRECTORY     restore a release backup into the stopped stack
+  help                  show this help
+EOF
+}
+
 compose() {
   docker compose "${compose_files[@]}" "$@"
+}
+
+release_compose() {
+  docker compose --env-file "$release_env" -f docker-compose.release.yml "$@"
+}
+
+release_random_secret() {
+  openssl rand -hex 32
+}
+
+release_ensure_env() {
+  if [[ ! -f "$release_env" ]]; then
+    say_step "creating release secrets"
+    umask 077
+    {
+      printf 'POSTGRES_USER=wardrobe\n'
+      printf 'POSTGRES_PASSWORD=%s\n' "$(release_random_secret)"
+      printf 'POSTGRES_DB=wardrobe\n'
+      printf 'SECRET_KEY=%s\n' "$(release_random_secret)"
+      printf 'NEXTAUTH_SECRET=%s\n' "$(release_random_secret)"
+      printf 'LOCAL_AUTH_ENABLED=true\n'
+      printf 'LOCAL_AUTH_BOOTSTRAP_TOKEN=%s\n' "$(release_random_secret)"
+      printf 'AI_INTERNAL_ENABLED=false\n'
+      printf 'NEXTAUTH_URL=http://localhost:8080\n'
+    } > "$release_env"
+    chmod 600 "$release_env"
+  fi
+  [[ "$(stat -f '%Lp' "$release_env" 2>/dev/null || stat -c '%a' "$release_env")" == "600" ]] || chmod 600 "$release_env"
+}
+
+release_migrations() {
+  say_step "applying release database migrations"
+  release_compose exec -T backend alembic upgrade head
+}
+
+release_wait() {
+  for _ in {1..30}; do
+    if release_compose exec -T backend curl --fail --silent http://localhost:8000/api/v1/health >/dev/null 2>&1 \
+      && curl --fail --silent http://localhost:8080 >/dev/null 2>&1; then
+      return
+    fi
+    sleep 2
+  done
+  say_warn "the release stack is still starting; inspect it with ./wardrobe release logs"
+}
+
+release_bootstrap() {
+  local email=""
+  local display_name=""
+  local password=""
+  local reset=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --email) email="${2:-}"; shift 2 ;;
+      --display-name) display_name="${2:-}"; shift 2 ;;
+      --password) password="${2:-}"; shift 2 ;;
+      --reset-password) reset=true; shift ;;
+      *) say_die "unknown bootstrap option: $1" ;;
+    esac
+  done
+  [[ -n "$email" ]] || say_die "bootstrap requires --email EMAIL"
+  [[ -n "$display_name" ]] || display_name="${email%@*}"
+
+  local args=(--email "$email" --display-name "$display_name")
+  [[ -n "$password" ]] && args+=(--password "$password")
+  [[ "$reset" == true ]] && args+=(--reset-password)
+  release_compose exec -T backend python scripts/bootstrap_local_user.py "${args[@]}"
+}
+
+release_start() {
+  local build=true
+  local bootstrap_args=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --no-build) build=false; shift ;;
+      --email|--display-name|--password) bootstrap_args+=("$1" "${2:-}"); shift 2 ;;
+      --reset-password) bootstrap_args+=("$1"); shift ;;
+      *) say_die "unknown release up option: $1" ;;
+    esac
+  done
+
+  ensure_docker
+  release_ensure_env
+  say_heading "Wardrowbe release"
+  if [[ "$build" == true ]]; then
+    say_step "building release images"
+    release_compose build
+  fi
+  say_step "starting release services"
+  release_compose up -d
+  release_migrations
+  if [[ "${#bootstrap_args[@]}" -gt 0 ]]; then
+    release_bootstrap "${bootstrap_args[@]}"
+  fi
+  release_wait
+  say_ok "Wardrowbe release is available at http://localhost:8080"
+}
+
+release_import_manifest() {
+  ensure_docker
+  release_ensure_env
+  [[ "${1:-}" == "--user-id" && -n "${2:-}" ]] || say_die "release import requires --user-id ID"
+  local user_id="$2"
+  shift 2
+  [[ "${1:-}" == "--manifest" && -f "${2:-}" ]] || say_die "release import requires --manifest FILE"
+  local manifest="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
+  shift 2
+  [[ "${1:-}" == "--image-root" && -d "${2:-}" ]] || say_die "release import requires --image-root DIRECTORY"
+  local image_root="$(cd "$2" && pwd)"
+  shift 2
+  [[ $# -eq 0 ]] || say_die "unknown release import option: $1"
+
+  release_migrations
+  say_step "importing retailer items into release"
+  release_compose run --rm --no-deps \
+    -v "$(dirname "$manifest"):/imports/manifest:ro" \
+    -v "$image_root:/imports/images:ro" \
+    backend python scripts/import_retailer_manifest.py \
+    --user-id "$user_id" \
+    --manifest "/imports/manifest/$(basename "$manifest")" \
+    --image-root /imports/images
 }
 
 install_docker() {
@@ -163,6 +307,22 @@ fi
 
 case "$command" in
   help|--help|-h) usage ;;
+  release)
+    release_command="${1:-help}"
+    if [[ $# -gt 0 ]]; then shift; fi
+    case "$release_command" in
+      help|--help|-h) release_usage ;;
+      setup) ensure_docker; release_ensure_env; say_ok "release prerequisites are ready" ;;
+      up) release_start "$@" ;;
+      down) ensure_docker; release_ensure_env; release_compose down ;;
+      status) ensure_docker; release_ensure_env; release_compose ps ;;
+      logs) ensure_docker; release_ensure_env; release_compose logs -f "$@" ;;
+      migrate) ensure_docker; release_ensure_env; release_migrations ;;
+      bootstrap) ensure_docker; release_ensure_env; release_bootstrap "$@" ;;
+      import) release_import_manifest "$@" ;;
+      *) say_die "unknown release command: $release_command" ;;
+    esac
+    ;;
   setup) ensure_docker; say_ok "Docker is ready" ;;
   up) start "$@" ;;
   down) ensure_docker; compose down ;;

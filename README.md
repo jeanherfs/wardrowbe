@@ -218,6 +218,35 @@ read-only into the one-off importer container.
   --image-root /path/to/images
 ```
 
+### Local release mode
+
+Release mode runs this fork on port 8080 with separate persistent volumes, so
+it can be moved to a home server without mixing data into the development
+stack. The first command generates `.env.release` with mode-600 local secrets.
+
+```bash
+./wardrobe release up --email mail@jeanherfs.nl
+# The generated temporary password is printed once by the bootstrap command.
+open http://localhost:8080
+./wardrobe release status
+./wardrobe release logs frontend
+```
+
+The release importer uses the same manifest format but targets the release
+database:
+
+```bash
+./wardrobe release import --user-id <uuid> \
+  --manifest /path/to/items.json \
+  --image-root /path/to/images
+```
+
+For a home-server move, stop the release stack, run
+`./wardrobe release backup /path/to/backup`, copy that directory and the fork
+to the server, then run `./wardrobe release restore /path/to/backup` there.
+The backup contains the PostgreSQL dump and uploads archive; generated secrets
+remain local and are not included.
+
 ## AI Configuration
 
 Wardrowbe works with any OpenAI-compatible API. You need two types of models:
