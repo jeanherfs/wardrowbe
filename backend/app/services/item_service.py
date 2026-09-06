@@ -225,6 +225,7 @@ class ItemService:
             image_path=image_paths["image_path"],
             thumbnail_path=image_paths.get("thumbnail_path"),
             medium_path=image_paths.get("medium_path"),
+            original_image_path=image_paths.get("original_image_path"),
             image_hash=image_paths.get("image_hash"),
             type=item_data.type,
             subtype=item_data.subtype,
@@ -247,6 +248,7 @@ class ItemService:
             return_status=item_data.return_status,
             fit_rating=item_data.fit_rating,
             fit_notes=item_data.fit_notes,
+            measurements=(item_data.measurements.model_dump(exclude_none=True) if item_data.measurements else None),
         )
 
         self.db.add(item)

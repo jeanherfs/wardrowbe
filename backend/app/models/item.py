@@ -94,6 +94,8 @@ class ClothingItem(Base):
     style: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     formality: Mapped[str | None] = mapped_column(String(50))
     season: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    # Explicit garment measurements only; values carry provenance and confidence.
+    measurements: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # AI metadata
     status: Mapped[ItemStatus] = mapped_column(

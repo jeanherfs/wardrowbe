@@ -30,6 +30,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       DEBUG: "false"
       PUID: ${PUID:-1000}
@@ -39,7 +41,11 @@ services:
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env.release}
       CORS_ORIGINS: '["http://localhost:8080"]'
       STORAGE_PATH: /data/wardrobe
-      AI_INTERNAL_ENABLED: ${AI_INTERNAL_ENABLED:-false}
+      AI_INTERNAL_ENABLED: ${AI_INTERNAL_ENABLED:-true}
+      AI_BASE_URL: ${AI_BASE_URL:-http://host.docker.internal:11434/v1}
+      AI_VISION_MODEL: ${AI_VISION_MODEL:-qwen3-vl:8b}
+      AI_TEXT_MODEL: ${AI_TEXT_MODEL:-qwen3-vl:8b}
+      AI_TIMEOUT: ${AI_TIMEOUT:-300}
       LOCAL_AUTH_ENABLED: ${LOCAL_AUTH_ENABLED:-true}
       LOCAL_AUTH_BOOTSTRAP_TOKEN: ${LOCAL_AUTH_BOOTSTRAP_TOKEN:?Set LOCAL_AUTH_BOOTSTRAP_TOKEN in .env.release}
       OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
@@ -63,6 +69,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     command: arq app.workers.worker.WorkerSettings
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       DEBUG: "false"
       PUID: ${PUID:-1000}
@@ -70,7 +78,11 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-wardrobe}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wardrobe}
       REDIS_URL: redis://redis:6379/0
       STORAGE_PATH: /data/wardrobe
-      AI_INTERNAL_ENABLED: ${AI_INTERNAL_ENABLED:-false}
+      AI_INTERNAL_ENABLED: ${AI_INTERNAL_ENABLED:-true}
+      AI_BASE_URL: ${AI_BASE_URL:-http://host.docker.internal:11434/v1}
+      AI_VISION_MODEL: ${AI_VISION_MODEL:-qwen3-vl:8b}
+      AI_TEXT_MODEL: ${AI_TEXT_MODEL:-qwen3-vl:8b}
+      AI_TIMEOUT: ${AI_TIMEOUT:-300}
     volumes:
       - wardrobe_release_uploads:/data/wardrobe
     depends_on:

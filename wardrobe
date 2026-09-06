@@ -58,6 +58,11 @@ Commands:
                         import a retailer manifest into the release database
   backup DIRECTORY      create portable database and upload backups
   restore DIRECTORY     restore a release backup into the stopped stack
+  enrich --user-id ID [--limit N]
+                        queue local Ollama enrichment for active items
+  normalize-images --user-id ID [--limit N]
+                        normalize existing catalog images
+  doctor                check Docker, Wardrowbe, and Ollama readiness
   help                  show this help
 EOF
 }
@@ -86,7 +91,11 @@ release_ensure_env() {
       printf 'NEXTAUTH_SECRET=%s\n' "$(release_random_secret)"
       printf 'LOCAL_AUTH_ENABLED=true\n'
       printf 'LOCAL_AUTH_BOOTSTRAP_TOKEN=%s\n' "$(release_random_secret)"
-      printf 'AI_INTERNAL_ENABLED=false\n'
+      printf 'AI_INTERNAL_ENABLED=true\n'
+      printf 'AI_BASE_URL=http://host.docker.internal:11434/v1\n'
+      printf 'AI_VISION_MODEL=qwen3-vl:8b\n'
+      printf 'AI_TEXT_MODEL=qwen3-vl:8b\n'
+      printf 'AI_TIMEOUT=300\n'
       printf 'NEXTAUTH_URL=http://localhost:8080\n'
     } > "$release_env"
     chmod 600 "$release_env"
@@ -185,6 +194,35 @@ release_import_manifest() {
     --user-id "$user_id" \
     --manifest "/imports/manifest/$(basename "$manifest")" \
     --image-root /imports/images
+}
+
+release_enrich() {
+  ensure_docker
+  release_ensure_env
+  [[ "${1:-}" == "--user-id" && -n "${2:-}" ]] || say_die "enrich requires --user-id ID"
+  local user_id="$2"; shift 2
+  local args=(--user-id "$user_id")
+  if [[ "${1:-}" == "--limit" ]]; then args+=(--limit "${2:-}"); shift 2; fi
+  [[ $# -eq 0 ]] || say_die "unknown enrich option: $1"
+  release_compose run --rm --no-deps backend python scripts/enrich_existing_items.py "${args[@]}"
+}
+
+release_doctor() {
+  ensure_docker
+  release_ensure_env
+  curl --fail --silent http://localhost:8080/api/v1/health >/dev/null && say_ok "Wardrowbe release is healthy" || say_warn "Wardrowbe release is not healthy"
+  local ollama_url; ollama_url="$(release_env_value AI_BASE_URL)"; ollama_url="${ollama_url:-http://localhost:11434/v1}"
+  ollama_url="${ollama_url/host.docker.internal/localhost}"
+  if curl --fail --silent "${ollama_url%/v1}/api/tags" >/dev/null 2>&1; then say_ok "Ollama is reachable at $ollama_url"; else say_warn "Ollama is unavailable; imports still work and enrichment remains pending"; fi
+}
+
+release_normalize_images() {
+  ensure_docker; release_ensure_env
+  [[ "${1:-}" == "--user-id" && -n "${2:-}" ]] || say_die "normalize-images requires --user-id ID"
+  local user_id="$2"; shift 2; local args=(--user-id "$user_id")
+  if [[ "${1:-}" == "--limit" ]]; then args+=(--limit "${2:-}"); shift 2; fi
+  [[ $# -eq 0 ]] || say_die "unknown normalize-images option: $1"
+  release_compose run --rm --no-deps backend python scripts/normalize_existing_images.py "${args[@]}"
 }
 
 release_env_value() {
@@ -401,6 +439,9 @@ case "$command" in
       migrate) ensure_docker; release_ensure_env; release_migrations ;;
       bootstrap) ensure_docker; release_ensure_env; release_bootstrap "$@" ;;
       import) release_import_manifest "$@" ;;
+      enrich) release_enrich "$@" ;;
+      normalize-images) release_normalize_images "$@" ;;
+      doctor) release_doctor ;;
       backup) release_backup "$@" ;;
       restore) release_restore "$@" ;;
       *) say_die "unknown release command: $release_command" ;;

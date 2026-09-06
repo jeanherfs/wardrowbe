@@ -108,6 +108,8 @@ def tags_to_item_fields(tags: ClothingTags, raw_response: str | None = None) -> 
         "condition": tags.condition,
         "features": tags.features or [],
     }
+    if tags.measurements:
+        tags_jsonb["measurements"] = tags.measurements
     if tags.logprobs_confidence is not None:
         tags_jsonb["logprobs_confidence"] = tags.logprobs_confidence
 
@@ -121,6 +123,7 @@ def tags_to_item_fields(tags: ClothingTags, raw_response: str | None = None) -> 
         "style": tags.style,
         "formality": tags.formality,
         "season": tags.season,
+        "measurements": tags.measurements,
         "tags": tags_jsonb,  # Populate the tags JSONB field for frontend
         "ai_processed": True,
         "ai_confidence": tags.confidence,

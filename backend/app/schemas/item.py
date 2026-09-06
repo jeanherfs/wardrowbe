@@ -41,6 +41,44 @@ class ItemTags(BaseModel):
     fit: str | None = None
 
 
+MEASUREMENT_KEYS = {
+    "chest_cm", "waist_cm", "hip_cm", "inseam_cm", "outseam_cm", "rise_cm",
+    "shoulder_cm", "sleeve_cm", "garment_length_cm", "foot_length_cm", "shoe_width_cm",
+}
+
+
+class MeasurementRecord(BaseModel):
+    value: float | None = Field(default=None, ge=0)
+    source: str = Field(min_length=1, max_length=40)
+    confidence: float = Field(default=1.0, ge=0, le=1)
+
+
+class Measurements(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_keys(cls, value):
+        if value is None:
+            return None
+        unknown = set(value) - MEASUREMENT_KEYS
+        if unknown:
+            raise ValueError(f"Unknown measurement keys: {sorted(unknown)}")
+        return value
+
+    chest_cm: MeasurementRecord | None = None
+    waist_cm: MeasurementRecord | None = None
+    hip_cm: MeasurementRecord | None = None
+    inseam_cm: MeasurementRecord | None = None
+    outseam_cm: MeasurementRecord | None = None
+    rise_cm: MeasurementRecord | None = None
+    shoulder_cm: MeasurementRecord | None = None
+    sleeve_cm: MeasurementRecord | None = None
+    garment_length_cm: MeasurementRecord | None = None
+    foot_length_cm: MeasurementRecord | None = None
+    shoe_width_cm: MeasurementRecord | None = None
+
+
 class ItemBase(BaseModel):
     type: str = Field(default="unknown", max_length=50)  # Default to unknown, AI will detect
     subtype: str | None = Field(None, max_length=50)
@@ -58,6 +96,7 @@ class ItemBase(BaseModel):
     return_status: ReturnStatus | None = None
     fit_rating: FitRating | None = None
     fit_notes: str | None = None
+    measurements: Measurements | None = None
 
 
 class ItemCreate(ItemBase):
@@ -87,6 +126,7 @@ class ItemUpdate(BaseModel):
     return_status: ReturnStatus | None = None
     fit_rating: FitRating | None = None
     fit_notes: str | None = None
+    measurements: Measurements | None = None
 
 
 class ItemResponse(ItemBase):

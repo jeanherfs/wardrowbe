@@ -45,6 +45,7 @@ class ClothingTags(BaseModel):
     logprobs_confidence: float | None = None
     description: str | None = None
     raw_response: str | None = None
+    measurements: dict | None = None
 
 
 TAGGING_PROMPT = load_prompt("clothing_analysis")
@@ -439,6 +440,19 @@ class AIService:
         tags.style = validate_list(data.get("style", []), VALID_STYLES)
         tags.season = validate_list(data.get("season", []), VALID_SEASONS)
         tags.fit = validate_value(data.get("fit"), VALID_FIT)
+        measurements = data.get("measurements")
+        if isinstance(measurements, dict):
+            clean_measurements = {}
+            allowed = {"chest_cm", "waist_cm", "hip_cm", "inseam_cm", "outseam_cm", "rise_cm", "shoulder_cm", "sleeve_cm", "garment_length_cm", "foot_length_cm", "shoe_width_cm"}
+            for key, entry in measurements.items():
+                if key in allowed and isinstance(entry, dict) and entry.get("value") is not None:
+                    try:
+                        value = float(entry["value"])
+                        if value >= 0:
+                            clean_measurements[key] = {"value": value, "source": str(entry.get("source", "image")), "confidence": max(0.0, min(1.0, float(entry.get("confidence", 0.5))))}
+                    except (TypeError, ValueError):
+                        continue
+            tags.measurements = clean_measurements or None
         tags.confidence = compute_tag_completeness(tags)
 
         logger.info(

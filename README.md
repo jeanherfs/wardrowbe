@@ -674,3 +674,20 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Storage for clothing photos
 
 Works great on a Raspberry Pi 5!
+# Local Ollama enrichment
+
+Retailer imports can enrich missing clothing metadata locally. Install Ollama,
+then run `ollama pull qwen3-vl:8b`. Release Docker defaults to
+`http://host.docker.internal:11434/v1`; override `AI_BASE_URL`,
+`AI_VISION_MODEL`, or `AI_TEXT_MODEL` in `.env.release` when moving to a server.
+
+After an import, queue existing active items with:
+
+```sh
+./wardrobe release enrich --user-id YOUR_USER_UUID
+```
+
+Enrichment never overwrites manual fields and never invents measurements. Catalog
+images are locally background-cleaned, centered on a square canvas, and retain an
+original source copy in the upload volume. If Ollama is unavailable, imports still
+complete and the command can be rerun later.
