@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -7,7 +8,7 @@ import pytest_asyncio
 from sqlalchemy import select
 
 from app.models.item import ClothingItem
-from app.models.learning import ItemPairScore, UserLearningProfile
+from app.models.learning import ItemPairScore, StyleInsight, UserLearningProfile
 from app.models.outfit import Outfit, OutfitItem, OutfitSource, OutfitStatus, UserFeedback
 from app.models.user import User
 from app.services.learning_service import LearningService
@@ -193,6 +194,80 @@ class TestIncrementalEMA:
         profile = result.scalar_one_or_none()
         assert profile is not None
         assert profile.feedback_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_recompute_includes_direct_item_rating_signals(
+        self, db_session, test_user_for_learning
+    ):
+        user_id = test_user_for_learning.id
+        rated_items = [
+            ClothingItem(
+                id=uuid4(),
+                user_id=user_id,
+                type="shirt",
+                image_path=f"rated-{idx}.jpg",
+                brand="Acme",
+                primary_color="navy",
+                style=["classic"],
+                fit_score=Decimal("4.5"),
+                style_score=Decimal("5.0"),
+            )
+            for idx in range(3)
+        ]
+        unrated = ClothingItem(
+            id=uuid4(),
+            user_id=user_id,
+            type="shirt",
+            image_path="unrated.jpg",
+            brand="Other",
+            primary_color="red",
+            style=["sporty"],
+        )
+        db_session.add_all([*rated_items, unrated])
+        await db_session.commit()
+
+        profile = await LearningService(db_session).recompute_learning_profile(user_id)
+
+        assert profile.items_rated == 3
+        assert profile.average_item_fit == Decimal("4.50")
+        assert profile.average_item_style == Decimal("5.00")
+        assert profile.learned_color_scores["navy"] == 0.875
+        assert profile.learned_type_scores["shirt"] == 0.875
+        assert profile.learned_brand_scores["Acme"] == 0.875
+        assert "red" not in profile.learned_color_scores
+
+    @pytest.mark.asyncio
+    async def test_generate_insights_uses_item_ratings_without_outfit_feedback(
+        self, db_session, test_user_for_learning
+    ):
+        user_id = test_user_for_learning.id
+        for idx, (fit_score, style_score) in enumerate(
+            [(5.0, 4.5), (4.5, 5.0), (4.0, 4.5)]
+        ):
+            db_session.add(
+                ClothingItem(
+                    id=uuid4(),
+                    user_id=user_id,
+                    type="shirt",
+                    image_path=f"rated-{idx}.jpg",
+                    brand="Acme",
+                    primary_color="navy",
+                    style=["classic"],
+                    fit_score=Decimal(str(fit_score)),
+                    style_score=Decimal(str(style_score)),
+                )
+            )
+        await db_session.commit()
+
+        service = LearningService(db_session)
+        await service.recompute_learning_profile(user_id)
+        insights = await service.generate_insights(user_id)
+
+        assert insights
+        assert any(insight.category == "item" for insight in insights)
+        item_insight = next(insight for insight in insights if insight.category == "item")
+        assert item_insight.supporting_data["items_rated"] == 3
+        assert item_insight.confidence > 0
 
 
 class TestItemPairScores:

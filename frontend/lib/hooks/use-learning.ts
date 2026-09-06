@@ -22,6 +22,11 @@ export interface LearnedStyleScore {
   score: number;
 }
 
+export interface LearnedAttributeScore {
+  value: string;
+  score: number;
+}
+
 export interface OccasionPattern {
   occasion: string;
   preferred_colors: string[];
@@ -42,8 +47,13 @@ export interface LearningProfile {
   average_rating: number | null;
   average_comfort_rating: number | null;
   average_style_rating: number | null;
+  items_rated: number;
+  average_item_fit: number | null;
+  average_item_style: number | null;
   color_preferences: LearnedColorScore[];
   style_preferences: LearnedStyleScore[];
+  type_preferences: LearnedAttributeScore[];
+  brand_preferences: LearnedAttributeScore[];
   occasion_patterns: OccasionPattern[];
   weather_preferences: WeatherPreference[];
   last_computed_at: string | null;

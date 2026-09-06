@@ -17,6 +17,9 @@ vi.mock('next-auth/react', () => ({
     data: null,
     status: 'unauthenticated',
   }),
+  getProviders: vi.fn().mockResolvedValue({
+    'local-credentials': { id: 'local-credentials' },
+  }),
   signIn: vi.fn(),
   signOut: vi.fn(),
   SessionProvider: ({ children }: { children: React.ReactNode }) => children,

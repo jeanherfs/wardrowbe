@@ -54,6 +54,8 @@ k8s/*.secret.yaml
 
 # Local development
 .worktrees/
+.env.release
+imports/
 *.local
 .claude/
 .serena/

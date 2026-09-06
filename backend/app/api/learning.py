@@ -37,6 +37,13 @@ class LearnedStyleScore(BaseModel):
     score: float
 
 
+class LearnedAttributeScore(BaseModel):
+    """Learned preference score for an item type or brand."""
+
+    value: str
+    score: float
+
+
 class OccasionPattern(BaseModel):
     """Learned occasion pattern."""
 
@@ -63,8 +70,13 @@ class LearningProfileResponse(BaseModel):
     average_rating: float | None = None
     average_comfort_rating: float | None = None
     average_style_rating: float | None = None
+    items_rated: int = 0
+    average_item_fit: float | None = None
+    average_item_style: float | None = None
     color_preferences: list[LearnedColorScore]
     style_preferences: list[LearnedStyleScore]
+    type_preferences: list[LearnedAttributeScore]
+    brand_preferences: list[LearnedAttributeScore]
     occasion_patterns: list[OccasionPattern]
     weather_preferences: list[WeatherPreference]
     last_computed_at: datetime | None = None
@@ -139,6 +151,8 @@ async def get_learning_insights(
 
     color_preferences = []
     style_preferences = []
+    type_preferences = []
+    brand_preferences = []
     occasion_patterns = []
     weather_preferences = []
 
@@ -166,6 +180,22 @@ async def get_learning_insights(
                     profile.learned_style_scores.items(),
                     key=lambda x: x[1],
                     reverse=True,
+                )
+                ]
+
+        if profile.learned_type_scores:
+            type_preferences = [
+                LearnedAttributeScore(value=item_type, score=score)
+                for item_type, score in sorted(
+                    profile.learned_type_scores.items(), key=lambda x: x[1], reverse=True
+                )
+            ]
+
+        if profile.learned_brand_scores:
+            brand_preferences = [
+                LearnedAttributeScore(value=brand, score=score)
+                for brand, score in sorted(
+                    profile.learned_brand_scores.items(), key=lambda x: x[1], reverse=True
                 )
             ]
 
@@ -207,8 +237,17 @@ async def get_learning_insights(
         average_style_rating=float(profile.average_style_rating)
         if profile and profile.average_style_rating
         else None,
+        items_rated=profile.items_rated if profile else 0,
+        average_item_fit=float(profile.average_item_fit)
+        if profile and profile.average_item_fit
+        else None,
+        average_item_style=float(profile.average_item_style)
+        if profile and profile.average_item_style
+        else None,
         color_preferences=color_preferences,
         style_preferences=style_preferences,
+        type_preferences=type_preferences,
+        brand_preferences=brand_preferences,
         occasion_patterns=occasion_patterns,
         weather_preferences=weather_preferences,
         last_computed_at=profile.last_computed_at if profile else None,
@@ -271,6 +310,8 @@ async def recompute_learning_profile(
     # Build response
     color_preferences = []
     style_preferences = []
+    type_preferences = []
+    brand_preferences = []
     occasion_patterns = []
     weather_preferences = []
 
@@ -295,6 +336,22 @@ async def recompute_learning_profile(
                 profile.learned_style_scores.items(),
                 key=lambda x: x[1],
                 reverse=True,
+            )
+            ]
+
+    if profile.learned_type_scores:
+        type_preferences = [
+            LearnedAttributeScore(value=item_type, score=score)
+            for item_type, score in sorted(
+                profile.learned_type_scores.items(), key=lambda x: x[1], reverse=True
+            )
+        ]
+
+    if profile.learned_brand_scores:
+        brand_preferences = [
+            LearnedAttributeScore(value=brand, score=score)
+            for brand, score in sorted(
+                profile.learned_brand_scores.items(), key=lambda x: x[1], reverse=True
             )
         ]
 
@@ -334,8 +391,13 @@ async def recompute_learning_profile(
         average_style_rating=float(profile.average_style_rating)
         if profile.average_style_rating
         else None,
+        items_rated=profile.items_rated,
+        average_item_fit=float(profile.average_item_fit) if profile.average_item_fit else None,
+        average_item_style=float(profile.average_item_style) if profile.average_item_style else None,
         color_preferences=color_preferences,
         style_preferences=style_preferences,
+        type_preferences=type_preferences,
+        brand_preferences=brand_preferences,
         occasion_patterns=occasion_patterns,
         weather_preferences=weather_preferences,
         last_computed_at=profile.last_computed_at,

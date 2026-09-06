@@ -64,6 +64,7 @@ import { Item } from '@/lib/types';
 import { useClothingTypes, useClothingColors } from '@/lib/hooks/use-translated-constants';
 import { ColorEyedropper } from '@/components/color-eyedropper';
 import { GeneratePairingsDialog } from '@/components/generate-pairings-dialog';
+import { HalfStarPicker } from '@/components/half-star-picker';
 import { useFeatures } from '@/lib/hooks/use-features';
 import { useTranslations } from 'next-intl';
 
@@ -190,6 +191,15 @@ export function ItemDetailDialog({ item, open, onOpenChange }: ItemDetailDialogP
       });
     } catch (error) {
       console.error('Failed to toggle favorite:', error);
+    }
+  };
+
+  const handleRatingChange = async (field: 'fit_score' | 'style_score', value: number) => {
+    try {
+      await updateItem.mutateAsync({ id: item.id, data: { [field]: value } });
+    } catch (error) {
+      console.error(`Failed to update ${field}:`, error);
+      toast.error('Unable to save rating');
     }
   };
 
@@ -686,6 +696,26 @@ export function ItemDetailDialog({ item, open, onOpenChange }: ItemDetailDialogP
                         </span>
                       </div>
                     )}
+                  </div>
+
+                  {/* Item ratings */}
+                  <div className="space-y-3 pt-2 border-t">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-medium">Fit</span>
+                      <HalfStarPicker
+                        label="Fit"
+                        value={item.fit_score ?? null}
+                        onChange={(value) => void handleRatingChange('fit_score', value)}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-medium">Style</span>
+                      <HalfStarPicker
+                        label="Style"
+                        value={item.style_score ?? null}
+                        onChange={(value) => void handleRatingChange('style_score', value)}
+                      />
+                    </div>
                   </div>
 
                   {/* Wash Status */}

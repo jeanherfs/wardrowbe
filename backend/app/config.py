@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     oidc_client_secret: str | None = None
     oidc_mobile_client_id: str | None = None
     oidc_ca_bundle: str | None = Field(default=None)
+    local_auth_enabled: bool = False
+    local_auth_bootstrap_token: str | None = None
 
     # AI capability switches.
     # ai_internal_enabled is the master switch; ai_vision_enabled / ai_text_enabled
@@ -53,10 +55,10 @@ class Settings(BaseSettings):
     ai_text_enabled: bool | None = Field(default=None)
 
     # AI Service (OpenAI-compatible API - supports Ollama, OpenAI, etc.)
-    ai_base_url: str = Field(default="")
+    ai_base_url: str = Field(default="http://host.docker.internal:11434/v1")
     ai_api_key: str | None = Field(default=None)
-    ai_vision_model: str = Field(default="gpt-4o")  # comma-separated for model rotation
-    ai_text_model: str = Field(default="gpt-4o")  # comma-separated for model rotation
+    ai_vision_model: str = Field(default="qwen3-vl:8b")  # comma-separated for model rotation
+    ai_text_model: str = Field(default="qwen3-vl:8b")  # comma-separated for model rotation
     ai_timeout: int = Field(default=120)
     ai_max_retries: int = Field(default=3)
     ai_max_tokens: int = Field(default=8000)
@@ -146,10 +148,10 @@ class Settings(BaseSettings):
 
         oidc_configured = oidc_issuer and oidc_client
         is_dev = self.debug and not oidc_configured
-        if not oidc_configured and not is_dev:
+        if not oidc_configured and not is_dev and not self.local_auth_enabled:
             return (
-                "No authentication method configured. "
-                "Set OIDC_ISSUER_URL + OIDC_CLIENT_ID, or enable DEBUG mode."
+                "No authentication method configured. Set OIDC_ISSUER_URL + OIDC_CLIENT_ID, "
+                "enable LOCAL_AUTH_ENABLED, or enable DEBUG mode."
             )
 
         return None
@@ -157,6 +159,8 @@ class Settings(BaseSettings):
     def get_auth_mode(self) -> str:
         if self.oidc_issuer_url and self.oidc_client_id:
             return "oidc"
+        if self.local_auth_enabled:
+            return "local"
         if self.debug:
             return "dev"
         return "unknown"

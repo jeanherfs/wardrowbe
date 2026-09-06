@@ -188,6 +188,65 @@ docker compose exec backend alembic upgrade head
 docker compose logs -f frontend backend
 ```
 
+### One-command local setup
+
+The fork includes a local wrapper so you do not need Node.js, Python, or package
+managers installed on the host. Docker is the only host dependency; `./wardrobe
+setup` installs it automatically on supported macOS (Homebrew) and Debian/Ubuntu
+hosts, or starts Docker Desktop when it is already installed.
+
+```bash
+# Shows the available commands
+./wardrobe
+
+# Builds local images, starts the development stack, and applies migrations
+./wardrobe up
+
+# Inspect or stop the local stack
+./wardrobe status
+./wardrobe logs backend
+./wardrobe down
+```
+
+To import a collected retailer manifest, pass the app user ID, the JSON manifest,
+and its downloaded image directory. The wrapper mounts those two local paths
+read-only into the one-off importer container.
+
+```bash
+./wardrobe import --user-id <uuid> \
+  --manifest /path/to/items.json \
+  --image-root /path/to/images
+```
+
+### Local release mode
+
+Release mode runs this fork on port 8080 with separate persistent volumes, so
+it can be moved to a home server without mixing data into the development
+stack. The first command generates `.env.release` with mode-600 local secrets.
+
+```bash
+./wardrobe release up --email mail@jeanherfs.nl
+# The generated temporary password is printed once by the bootstrap command.
+open http://localhost:8080
+./wardrobe release status
+./wardrobe release logs frontend
+```
+
+The release importer uses the same manifest format but targets the release
+database:
+
+```bash
+./wardrobe release import --user-id <uuid> \
+  --manifest /path/to/items.json \
+  --image-root /path/to/images
+```
+
+For a home-server move, stop the release stack, run
+`./wardrobe release backup /path/to/backup`, copy that directory and the fork
+to the server, then run `./wardrobe release restore /path/to/backup` there.
+The backup contains the PostgreSQL dump and uploads archive; generated secrets
+remain local and are not included.
+
 ## AI Configuration
 
 Wardrowbe works with any OpenAI-compatible API. You need two types of models:
@@ -615,3 +674,21 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Storage for clothing photos
 
 Works great on a Raspberry Pi 5!
+
+## Local Ollama enrichment
+
+Retailer imports can enrich missing clothing metadata locally. Install Ollama,
+then run `ollama pull qwen3-vl:8b`. Release Docker defaults to
+`http://host.docker.internal:11434/v1`; override `AI_BASE_URL`,
+`AI_VISION_MODEL`, or `AI_TEXT_MODEL` in `.env.release` when moving to a server.
+
+After an import, queue existing active items with:
+
+```sh
+./wardrobe release enrich --user-id YOUR_USER_UUID
+```
+
+Enrichment never overwrites manual fields and never invents measurements. Catalog
+images are locally background-cleaned, centered on a square canvas, and retain an
+original source copy in the upload volume. If Ollama is unavailable, imports still
+complete and the command can be rerun later.

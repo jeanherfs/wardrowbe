@@ -19,3 +19,24 @@ class AuthSession(BaseModel):
     family_id: UUID | None = None
     role: str
     is_authenticated: bool = True
+
+
+class LocalLoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LocalBootstrapRequest(BaseModel):
+    email: str
+    display_name: str
+    password: str
+    external_id: str | None = None
+    reset_password: bool = False
+
+
+class LocalAuthResponse(BaseModel):
+    id: UUID
+    email: str
+    display_name: str
+    external_id: str
+    access_token: str

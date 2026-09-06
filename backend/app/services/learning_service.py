@@ -16,7 +16,7 @@ from decimal import Decimal
 from itertools import combinations
 from uuid import UUID
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -551,13 +551,29 @@ class LearningService:
         )
         outfits = list(result.scalars().all())
 
-        if len(outfits) < self.MIN_FEEDBACK_FOR_LEARNING:
-            logger.info(f"Not enough feedback for user {user_id} ({len(outfits)} outfits)")
+        rated_items_result = await self.db.execute(
+            select(ClothingItem).where(
+                and_(
+                    ClothingItem.user_id == user_id,
+                    ClothingItem.is_archived.is_(False),
+                    or_(
+                        ClothingItem.fit_score.is_not(None),
+                        ClothingItem.style_score.is_not(None),
+                    ),
+                )
+            )
+        )
+        rated_items = list(rated_items_result.scalars().all())
+
+        if len(outfits) < self.MIN_FEEDBACK_FOR_LEARNING and not rated_items:
+            logger.info(f"Not enough feedback for user {user_id} ({len(outfits)} outfits, 0 items)")
             return await self._get_or_create_profile(user_id)
 
         # Initialize accumulators
         color_scores: dict[str, list[float]] = {}
         style_scores: dict[str, list[float]] = {}
+        type_scores: dict[str, list[float]] = {}
+        brand_scores: dict[str, list[float]] = {}
         occasion_patterns: dict[str, dict] = {}
         weather_prefs: dict[str, dict] = {}
 
@@ -569,6 +585,13 @@ class LearningService:
         comfort_count = 0
         style_sum = 0
         style_count = 0
+
+        item_fit_values: list[float] = []
+        item_style_values: list[float] = []
+        direct_color_scores: dict[str, list[float]] = {}
+        direct_style_scores: dict[str, list[float]] = {}
+        direct_type_scores: dict[str, list[float]] = {}
+        direct_brand_scores: dict[str, list[float]] = {}
 
         for outfit in outfits:
             # Determine signal from this outfit
@@ -641,6 +664,31 @@ class LearningService:
                     style_sum += outfit.feedback.style_rating
                     style_count += 1
 
+        # Direct item ratings provide a stronger signal for item attributes than
+        # outfit feedback, while remaining independent of outfit history.
+        for item in rated_items:
+            dimension_scores = []
+            if item.fit_score is not None:
+                fit_score = float(item.fit_score)
+                item_fit_values.append(fit_score)
+                dimension_scores.append((fit_score - 3.0) / 2.0)
+            if item.style_score is not None:
+                style_score = float(item.style_score)
+                item_style_values.append(style_score)
+                dimension_scores.append((style_score - 3.0) / 2.0)
+            if not dimension_scores:
+                continue
+            signal = sum(dimension_scores) / len(dimension_scores)
+
+            if item.primary_color:
+                direct_color_scores.setdefault(item.primary_color, []).append(signal)
+            if item.type:
+                direct_type_scores.setdefault(item.type, []).append(signal)
+            if item.brand:
+                direct_brand_scores.setdefault(item.brand, []).append(signal)
+            for style in item.style or []:
+                direct_style_scores.setdefault(style, []).append(signal)
+
         # Compute final scores
         # Lower threshold (1) to show data early; quality improves with more feedback
         learned_color_scores = {}
@@ -652,6 +700,33 @@ class LearningService:
         for style, signals in style_scores.items():
             if len(signals) >= 1:
                 learned_style_scores[style] = round(sum(signals) / len(signals), 3)
+
+        def merge_direct_scores(
+            base: dict[str, float], direct: dict[str, list[float]]
+        ) -> dict[str, float]:
+            merged = dict(base)
+            for key, signals in direct.items():
+                direct_score = sum(signals) / len(signals)
+                if key in merged:
+                    merged[key] = round((merged[key] + direct_score) / 2, 3)
+                else:
+                    merged[key] = round(direct_score, 3)
+            return merged
+
+        learned_color_scores = merge_direct_scores(
+            learned_color_scores, direct_color_scores
+        )
+        learned_style_scores = merge_direct_scores(
+            learned_style_scores, direct_style_scores
+        )
+        learned_type_scores = {
+            key: round(sum(values) / len(values), 3)
+            for key, values in direct_type_scores.items()
+        }
+        learned_brand_scores = {
+            key: round(sum(values) / len(values), 3)
+            for key, values in direct_brand_scores.items()
+        }
 
         # Simplify occasion patterns
         learned_occasion_patterns = {}
@@ -690,6 +765,8 @@ class LearningService:
 
         profile.learned_color_scores = learned_color_scores
         profile.learned_style_scores = learned_style_scores
+        profile.learned_type_scores = learned_type_scores
+        profile.learned_brand_scores = learned_brand_scores
         profile.learned_occasion_patterns = learned_occasion_patterns
         profile.learned_weather_preferences = learned_weather_prefs
         profile.overall_acceptance_rate = (
@@ -700,8 +777,19 @@ class LearningService:
             Decimal(str(round(avg_comfort, 2))) if avg_comfort else None
         )
         profile.average_style_rating = Decimal(str(round(avg_style, 2))) if avg_style else None
+        profile.average_item_fit = (
+            Decimal(str(round(sum(item_fit_values) / len(item_fit_values), 2)))
+            if item_fit_values
+            else None
+        )
+        profile.average_item_style = (
+            Decimal(str(round(sum(item_style_values) / len(item_style_values), 2)))
+            if item_style_values
+            else None
+        )
         profile.feedback_count = len(outfits)
         profile.outfits_rated = rating_count
+        profile.items_rated = len(rated_items)
         profile.last_computed_at = datetime.now(UTC)
 
         await self.db.commit()
@@ -917,7 +1005,8 @@ class LearningService:
         """Generate human-readable insights about the user's style."""
         profile = await self._get_or_create_profile(user_id)
 
-        if not profile.last_computed_at or profile.feedback_count < self.MIN_FEEDBACK_FOR_LEARNING:
+        data_points = (profile.feedback_count or 0) + (profile.items_rated or 0)
+        if not profile.last_computed_at or data_points < self.MIN_FEEDBACK_FOR_LEARNING:
             return []
 
         insights = []
@@ -1013,6 +1102,111 @@ class LearningService:
                         expires_at=expiry,
                     )
                 )
+
+        # Direct item ratings explain both what fits and what matches the user's
+        # taste. Keep these facts explicit so the UI can show why a prediction
+        # was made, even when the user has not rated an outfit yet.
+        if profile.items_rated >= 3:
+            item_count = profile.items_rated
+            confidence = Decimal(str(min(0.95, 0.5 + min(item_count, 5) * 0.08)))
+
+            if profile.average_item_fit is not None:
+                fit_average = float(profile.average_item_fit)
+                fit_direction = "well" if fit_average >= 3.5 else "less well"
+                insights.append(
+                    StyleInsight(
+                        user_id=user_id,
+                        category="item",
+                        insight_type="pattern",
+                        title=f"Your best fit averages {fit_average:.1f}/5",
+                        description=(
+                            f"Across {item_count} rated items, you report that these garments fit "
+                            f"{fit_direction}. Use fit ratings to improve size and cut recommendations."
+                        ),
+                        confidence=confidence,
+                        supporting_data={
+                            "dimension": "fit",
+                            "average": fit_average,
+                            "items_rated": item_count,
+                        },
+                        expires_at=expiry,
+                    )
+                )
+
+            if profile.average_item_style is not None:
+                style_average = float(profile.average_item_style)
+                style_direction = "strongly matches" if style_average >= 3.5 else "matches less"
+                insights.append(
+                    StyleInsight(
+                        user_id=user_id,
+                        category="item",
+                        insight_type="positive" if style_average >= 3.5 else "suggestion",
+                        title=f"Your style ratings average {style_average:.1f}/5",
+                        description=(
+                            f"Your {item_count} item ratings show which garments {style_direction} "
+                            "your taste. We use this signal alongside colors, brands, and types."
+                        ),
+                        confidence=confidence,
+                        supporting_data={
+                            "dimension": "style",
+                            "average": style_average,
+                            "items_rated": item_count,
+                        },
+                        expires_at=expiry,
+                    )
+                )
+
+            if profile.learned_type_scores:
+                top_type, type_score = max(
+                    profile.learned_type_scores.items(), key=lambda entry: entry[1]
+                )
+                if type_score > 0.2:
+                    insights.append(
+                        StyleInsight(
+                            user_id=user_id,
+                            category="item",
+                            insight_type="positive",
+                            title=f"You tend to like {top_type}s",
+                            description=(
+                                f"Your ratings for {top_type} items are above neutral. "
+                                "We will prioritize this type when building suggestions."
+                            ),
+                            confidence=confidence,
+                            supporting_data={
+                                "dimension": "type",
+                                "value": top_type,
+                                "score": type_score,
+                                "items_rated": item_count,
+                            },
+                            expires_at=expiry,
+                        )
+                    )
+
+            if profile.learned_brand_scores:
+                top_brand, brand_score = max(
+                    profile.learned_brand_scores.items(), key=lambda entry: entry[1]
+                )
+                if brand_score > 0.2:
+                    insights.append(
+                        StyleInsight(
+                            user_id=user_id,
+                            category="item",
+                            insight_type="positive",
+                            title=f"{top_brand} is a strong match",
+                            description=(
+                                f"Your rated {top_brand} items score above neutral. "
+                                "This brand signal will help refine future recommendations."
+                            ),
+                            confidence=confidence,
+                            supporting_data={
+                                "dimension": "brand",
+                                "value": top_brand,
+                                "score": brand_score,
+                                "items_rated": item_count,
+                            },
+                            expires_at=expiry,
+                        )
+                    )
 
         # Save insights to database
         for insight in insights:

@@ -3,9 +3,18 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from app.utils.signed_urls import sign_image_url
+from app.models.item import FitRating, Retailer, ReturnStatus
 
 # Default wash intervals by clothing type (wears between washes)
 DEFAULT_WASH_INTERVALS: dict[str, int] = {
@@ -40,6 +49,53 @@ class ItemTags(BaseModel):
     fit: str | None = None
 
 
+MEASUREMENT_KEYS = {
+    "chest_cm", "waist_cm", "hip_cm", "inseam_cm", "outseam_cm", "rise_cm",
+    "shoulder_cm", "sleeve_cm", "garment_length_cm", "foot_length_cm", "shoe_width_cm",
+}
+
+
+class MeasurementRecord(BaseModel):
+    value: float | None = Field(default=None, ge=0)
+    source: str = Field(min_length=1, max_length=40)
+    confidence: float = Field(default=1.0, ge=0, le=1)
+
+
+def validate_half_star_score(value: Decimal | None) -> Decimal | None:
+    """Validate an optional 1–5 score in half-star increments."""
+    if value is None:
+        return None
+    if value < Decimal("1.0") or value > Decimal("5.0") or (value * 2) % 1 != 0:
+        raise ValueError("score must be between 1.0 and 5.0 in 0.5 increments")
+    return value
+
+
+class Measurements(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_keys(cls, value):
+        if value is None:
+            return None
+        unknown = set(value) - MEASUREMENT_KEYS
+        if unknown:
+            raise ValueError(f"Unknown measurement keys: {sorted(unknown)}")
+        return value
+
+    chest_cm: MeasurementRecord | None = None
+    waist_cm: MeasurementRecord | None = None
+    hip_cm: MeasurementRecord | None = None
+    inseam_cm: MeasurementRecord | None = None
+    outseam_cm: MeasurementRecord | None = None
+    rise_cm: MeasurementRecord | None = None
+    shoulder_cm: MeasurementRecord | None = None
+    sleeve_cm: MeasurementRecord | None = None
+    garment_length_cm: MeasurementRecord | None = None
+    foot_length_cm: MeasurementRecord | None = None
+    shoe_width_cm: MeasurementRecord | None = None
+
+
 class ItemBase(BaseModel):
     type: str = Field(default="unknown", max_length=50)  # Default to unknown, AI will detect
     subtype: str | None = Field(None, max_length=50)
@@ -49,6 +105,19 @@ class ItemBase(BaseModel):
     purchase_date: date | None = None
     purchase_price: Decimal | None = Field(None, ge=0)
     favorite: bool = False
+    retailer: Retailer | None = None
+    retailer_product_id: str | None = Field(None, max_length=100)
+    source_url: str | None = Field(None, max_length=2000)
+    purchased_size: str | None = Field(None, max_length=50)
+    purchased_color: str | None = Field(None, max_length=100)
+    return_status: ReturnStatus | None = None
+    fit_rating: FitRating | None = None
+    fit_score: Decimal | None = None
+    style_score: Decimal | None = None
+    fit_notes: str | None = None
+    measurements: Measurements | None = None
+
+    _validate_scores = field_validator("fit_score", "style_score")(validate_half_star_score)
 
 
 class ItemCreate(ItemBase):
@@ -70,10 +139,27 @@ class ItemUpdate(BaseModel):
     colors: list[str] | None = None
     primary_color: str | None = None
     wash_interval: int | None = None
+    retailer: Retailer | None = None
+    retailer_product_id: str | None = Field(None, max_length=100)
+    source_url: str | None = Field(None, max_length=2000)
+    purchased_size: str | None = Field(None, max_length=50)
+    purchased_color: str | None = Field(None, max_length=100)
+    return_status: ReturnStatus | None = None
+    fit_rating: FitRating | None = None
+    fit_score: Decimal | None = None
+    style_score: Decimal | None = None
+    fit_notes: str | None = None
+    measurements: Measurements | None = None
+
+    _validate_scores = field_validator("fit_score", "style_score")(validate_half_star_score)
 
 
 class ItemResponse(ItemBase):
     model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("fit_score", "style_score")
+    def _serialize_rating_score(self, value: Decimal | None) -> float | None:
+        return float(value) if value is not None else None
 
     @model_validator(mode="before")
     @classmethod
@@ -133,6 +219,7 @@ class ItemResponse(ItemBase):
     archive_reason: str | None = None
     created_at: datetime
     updated_at: datetime
+    imported_at: datetime | None = None
 
     @computed_field
     @property

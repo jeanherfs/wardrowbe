@@ -37,6 +37,8 @@ export interface Item {
   tags: ItemTags;
   colors: string[];
   primary_color?: string;
+  fit_score?: number | null;
+  style_score?: number | null;
   status: 'processing' | 'ready' | 'error' | 'archived';
   ai_processed: boolean;
   ai_confidence?: number;
