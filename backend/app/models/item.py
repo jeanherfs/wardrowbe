@@ -162,6 +162,8 @@ class ClothingItem(Base):
     purchased_color: Mapped[str | None] = mapped_column(String(100))
     return_status: Mapped[ReturnStatus | None] = mapped_column(Enum(ReturnStatus, name="return_status"))
     fit_rating: Mapped[FitRating | None] = mapped_column(Enum(FitRating, name="fit_rating"))
+    fit_score: Mapped[Decimal | None] = mapped_column(Numeric(2, 1))
+    style_score: Mapped[Decimal | None] = mapped_column(Numeric(2, 1))
     fit_notes: Mapped[str | None] = mapped_column(Text)
     imported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

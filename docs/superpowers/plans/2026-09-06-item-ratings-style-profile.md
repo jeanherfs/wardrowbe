@@ -22,7 +22,7 @@
 ### Task 1: Add item score columns and validation
 
 **Files:**
-- Create: `backend/migrations/versions/a7b8c9d0e1f2_add_item_rating_scores.py`
+- Create: `backend/migrations/versions/f8a9b0c1d2e3_add_item_rating_scores.py`
 - Modify: `backend/app/models/item.py`
 - Modify: `backend/app/schemas/item.py`
 - Test: `backend/tests/test_item_ratings.py`

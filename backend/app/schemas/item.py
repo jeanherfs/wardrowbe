@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from app.utils.signed_urls import sign_image_url
 from app.models.item import FitRating, Retailer, ReturnStatus
@@ -53,6 +53,15 @@ class MeasurementRecord(BaseModel):
     confidence: float = Field(default=1.0, ge=0, le=1)
 
 
+def validate_half_star_score(value: Decimal | None) -> Decimal | None:
+    """Validate an optional 1–5 score in half-star increments."""
+    if value is None:
+        return None
+    if value < Decimal("1.0") or value > Decimal("5.0") or (value * 2) % 1 != 0:
+        raise ValueError("score must be between 1.0 and 5.0 in 0.5 increments")
+    return value
+
+
 class Measurements(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -95,8 +104,12 @@ class ItemBase(BaseModel):
     purchased_color: str | None = Field(None, max_length=100)
     return_status: ReturnStatus | None = None
     fit_rating: FitRating | None = None
+    fit_score: Decimal | None = None
+    style_score: Decimal | None = None
     fit_notes: str | None = None
     measurements: Measurements | None = None
+
+    _validate_scores = field_validator("fit_score", "style_score")(validate_half_star_score)
 
 
 class ItemCreate(ItemBase):
@@ -125,8 +138,12 @@ class ItemUpdate(BaseModel):
     purchased_color: str | None = Field(None, max_length=100)
     return_status: ReturnStatus | None = None
     fit_rating: FitRating | None = None
+    fit_score: Decimal | None = None
+    style_score: Decimal | None = None
     fit_notes: str | None = None
     measurements: Measurements | None = None
+
+    _validate_scores = field_validator("fit_score", "style_score")(validate_half_star_score)
 
 
 class ItemResponse(ItemBase):
