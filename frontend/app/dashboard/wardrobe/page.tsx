@@ -267,6 +267,13 @@ function ItemCard({
             {t('wearCount', { count: item.wear_count })}
           </p>
         ) : null}
+        {(item.fit_score != null || item.style_score != null) && (
+          <p className="text-xs text-muted-foreground mt-1 tabular-nums">
+            {item.fit_score != null && `Fit ${item.fit_score.toFixed(1)}`}
+            {item.fit_score != null && item.style_score != null && ' · '}
+            {item.style_score != null && `Style ${item.style_score.toFixed(1)}`}
+          </p>
+        )}
         {item.ai_confidence !== undefined && item.ai_confidence > 0 && item.status === 'ready' && (
           <p className="text-xs text-muted-foreground mt-1">
             {t('ai.completeness', { percent: Math.round(item.ai_confidence * 100) })}
