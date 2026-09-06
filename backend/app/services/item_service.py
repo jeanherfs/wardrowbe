@@ -247,6 +247,8 @@ class ItemService:
             purchased_color=item_data.purchased_color,
             return_status=item_data.return_status,
             fit_rating=item_data.fit_rating,
+            fit_score=item_data.fit_score,
+            style_score=item_data.style_score,
             fit_notes=item_data.fit_notes,
             measurements=(item_data.measurements.model_dump(exclude_none=True) if item_data.measurements else None),
         )
