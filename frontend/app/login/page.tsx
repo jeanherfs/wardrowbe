@@ -22,18 +22,19 @@ function OIDCLoginButton({ callbackUrl }: { callbackUrl: string }) {
   );
 }
 
-function DevLogin({ callbackUrl }: { callbackUrl: string }) {
+function CredentialsLogin({ callbackUrl, local }: { callbackUrl: string; local: boolean }) {
   const [email, setEmail] = useState('dev@wardrobe.local');
   const [name, setName] = useState('Dev User');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const t = useTranslations('auth');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    await signIn('dev-credentials', {
+    await signIn(local ? 'local-credentials' : 'dev-credentials', {
       email,
-      name,
+      ...(local ? { password } : { name }),
       callbackUrl,
     });
   };
@@ -41,9 +42,9 @@ function DevLogin({ callbackUrl }: { callbackUrl: string }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="rounded-md bg-yellow-500/10 border border-yellow-500/20 p-3 text-sm text-yellow-600 dark:text-yellow-400">
-        {t('devMode')}
+        {local ? t('localMode') : t('devMode')}
       </div>
-      <div className="space-y-2">
+      {!local && <div className="space-y-2">
         <label htmlFor="email" className="block text-sm font-medium">
           {t('email')}
         </label>
@@ -56,7 +57,21 @@ function DevLogin({ callbackUrl }: { callbackUrl: string }) {
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           placeholder="dev@example.com"
         />
-      </div>
+      </div>}
+      {local && <div className="space-y-2">
+        <label htmlFor="password" className="block text-sm font-medium">
+          {t('password')}
+        </label>
+        <input
+          id="password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          autoComplete="current-password"
+        />
+      </div>}
       <div className="space-y-2">
         <label htmlFor="name" className="block text-sm font-medium">
           {t('displayName')}
@@ -131,12 +146,14 @@ function LoginContent() {
 
   const syncError = syncErrorParam || session?.syncError;
 
-  const [authMode, setAuthMode] = useState<'loading' | 'oidc' | 'dev' | 'unconfigured'>('loading');
+  const [authMode, setAuthMode] = useState<'loading' | 'oidc' | 'local' | 'dev' | 'unconfigured'>('loading');
 
   useEffect(() => {
     getProviders().then((providers) => {
       if (providers?.['oidc']) {
         setAuthMode('oidc');
+      } else if (providers?.['local-credentials']) {
+        setAuthMode('local');
       } else if (providers?.['dev-credentials']) {
         setAuthMode('dev');
       } else {
@@ -174,7 +191,8 @@ function LoginContent() {
 
       <div className="space-y-4">
         {authMode === 'oidc' && <OIDCLoginButton callbackUrl={callbackUrl} />}
-        {authMode === 'dev' && <DevLogin callbackUrl={callbackUrl} />}
+        {authMode === 'dev' && <CredentialsLogin callbackUrl={callbackUrl} local={false} />}
+        {authMode === 'local' && <CredentialsLogin callbackUrl={callbackUrl} local />}
         {authMode === 'unconfigured' && (
           <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm space-y-2">
             <p className="font-medium text-destructive">{t('unconfigured.title')}</p>

@@ -10,6 +10,14 @@ interface OIDCProfile {
   picture?: string;
 }
 
+interface LocalAuthResponse {
+  id: string;
+  external_id: string;
+  email: string;
+  display_name: string;
+  access_token: string;
+}
+
 const OIDCProvider: OAuthConfig<OIDCProfile> = {
   id: 'oidc',
   name: 'SSO',
@@ -82,6 +90,35 @@ const DevCredentialsProvider = CredentialsProvider({
     };
   },
 });
+
+const LocalCredentialsProvider = CredentialsProvider({
+  id: 'local-credentials',
+  name: 'Local password',
+  credentials: {
+    email: { label: 'Email', type: 'email', placeholder: 'you@example.com' },
+    password: { label: 'Password', type: 'password' },
+  },
+  async authorize(credentials) {
+    if (!credentials?.email || !credentials.password) return null;
+
+    const apiUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://backend:8000';
+    const response = await fetch(`${apiUrl}/api/v1/auth/local-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: credentials.email, password: credentials.password }),
+    });
+    if (!response.ok) return null;
+
+    const data = await response.json() as LocalAuthResponse;
+    return {
+      id: data.external_id,
+      email: data.email,
+      name: data.display_name,
+      accessToken: data.access_token,
+      backendUserId: data.id,
+    };
+  },
+});
 // Determine which provider to use
 function getProviders() {
   const providers = [];
@@ -92,6 +129,9 @@ function getProviders() {
 
   if (process.env.DEV_MODE === 'true' || process.env.NODE_ENV === 'development') {
     providers.push(DevCredentialsProvider);
+  }
+  if (process.env.LOCAL_AUTH_ENABLED === 'true') {
+    providers.push(LocalCredentialsProvider);
   }
   return providers;
 }
@@ -126,6 +166,17 @@ export const authOptions: NextAuthOptions = {
 
       // Initial sign in - sync with backend and get API token
       if (user) {
+        if (account?.provider === 'local-credentials' && 'accessToken' in user) {
+          const localUser = user as typeof user & {
+            accessToken: string;
+            backendUserId?: string;
+          };
+          token.accessToken = localUser.accessToken;
+          token.sub = localUser.id;
+          token.backendUserId = localUser.backendUserId;
+          token.isNewUser = false;
+          return token;
+        }
         try {
           const response = await fetch(`${apiUrl}/api/v1/auth/sync`, {
             method: 'POST',
