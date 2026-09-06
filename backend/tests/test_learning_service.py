@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -193,6 +194,47 @@ class TestIncrementalEMA:
         profile = result.scalar_one_or_none()
         assert profile is not None
         assert profile.feedback_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_recompute_includes_direct_item_rating_signals(
+        self, db_session, test_user_for_learning
+    ):
+        user_id = test_user_for_learning.id
+        rated_items = [
+            ClothingItem(
+                id=uuid4(),
+                user_id=user_id,
+                type="shirt",
+                image_path=f"rated-{idx}.jpg",
+                brand="Acme",
+                primary_color="navy",
+                style=["classic"],
+                fit_score=Decimal("4.5"),
+                style_score=Decimal("5.0"),
+            )
+            for idx in range(3)
+        ]
+        unrated = ClothingItem(
+            id=uuid4(),
+            user_id=user_id,
+            type="shirt",
+            image_path="unrated.jpg",
+            brand="Other",
+            primary_color="red",
+            style=["sporty"],
+        )
+        db_session.add_all([*rated_items, unrated])
+        await db_session.commit()
+
+        profile = await LearningService(db_session).recompute_learning_profile(user_id)
+
+        assert profile.items_rated == 3
+        assert profile.average_item_fit == Decimal("4.50")
+        assert profile.average_item_style == Decimal("5.00")
+        assert profile.learned_color_scores["navy"] == 0.875
+        assert profile.learned_type_scores["shirt"] == 0.875
+        assert profile.learned_brand_scores["Acme"] == 0.875
+        assert "red" not in profile.learned_color_scores
 
 
 class TestItemPairScores:

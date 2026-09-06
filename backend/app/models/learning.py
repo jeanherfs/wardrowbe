@@ -50,6 +50,10 @@ class UserLearningProfile(Base):
     # Format: {"casual": 0.9, "formal": 0.4, "sporty": -0.2}
     learned_style_scores: Mapped[dict] = mapped_column(JSONB, default=dict)
 
+    # Direct item-rating preferences, keyed by type/brand as well as style.
+    learned_type_scores: Mapped[dict] = mapped_column(JSONB, default=dict)
+    learned_brand_scores: Mapped[dict] = mapped_column(JSONB, default=dict)
+
     # Learned occasion preferences
     # Format: {"work": {"formality": "business-casual", "colors": ["blue", "gray"]}}
     learned_occasion_patterns: Mapped[dict] = mapped_column(JSONB, default=dict)
@@ -69,10 +73,13 @@ class UserLearningProfile(Base):
     average_overall_rating: Mapped[Decimal | None] = mapped_column(Numeric(3, 2))
     average_comfort_rating: Mapped[Decimal | None] = mapped_column(Numeric(3, 2))
     average_style_rating: Mapped[Decimal | None] = mapped_column(Numeric(3, 2))
+    average_item_fit: Mapped[Decimal | None] = mapped_column(Numeric(3, 2))
+    average_item_style: Mapped[Decimal | None] = mapped_column(Numeric(3, 2))
 
     # Number of data points used for learning
     feedback_count: Mapped[int] = mapped_column(Integer, default=0)
     outfits_rated: Mapped[int] = mapped_column(Integer, default=0)
+    items_rated: Mapped[int] = mapped_column(Integer, default=0)
 
     # Learning metadata
     last_computed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
