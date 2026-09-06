@@ -3,7 +3,15 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from app.utils.signed_urls import sign_image_url
 from app.models.item import FitRating, Retailer, ReturnStatus
@@ -148,6 +156,10 @@ class ItemUpdate(BaseModel):
 
 class ItemResponse(ItemBase):
     model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("fit_score", "style_score")
+    def _serialize_rating_score(self, value: Decimal | None) -> float | None:
+        return float(value) if value is not None else None
 
     @model_validator(mode="before")
     @classmethod

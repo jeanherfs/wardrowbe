@@ -172,6 +172,35 @@ class TestItemCRUD:
         assert data["brand"] == "Test Brand"
 
     @pytest.mark.asyncio
+    async def test_update_item_persists_half_star_fit_and_style_scores(
+        self, client: AsyncClient, test_user, auth_headers, db_session: AsyncSession
+    ):
+        item = ClothingItem(
+            user_id=test_user.id,
+            type="shirt",
+            image_path="test/rated-item.jpg",
+            status=ItemStatus.ready,
+        )
+        db_session.add(item)
+        await db_session.commit()
+        await db_session.refresh(item)
+
+        response = await client.patch(
+            f"/api/v1/items/{item.id}",
+            json={"fit_score": 4.5, "style_score": 3.0},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200, f"Unexpected error: {response.json()}"
+        data = response.json()
+        assert data["fit_score"] == 4.5
+        assert data["style_score"] == 3.0
+
+        await db_session.refresh(item)
+        assert float(item.fit_score) == 4.5
+        assert float(item.style_score) == 3.0
+
+    @pytest.mark.asyncio
     async def test_update_item_persists_retailer_size_and_fit_metadata(
         self, client: AsyncClient, test_user, auth_headers, db_session: AsyncSession
     ):
