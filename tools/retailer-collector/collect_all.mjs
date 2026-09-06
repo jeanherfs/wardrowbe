@@ -27,6 +27,7 @@ export function dedupeCards(cards) {
 export async function collectUntilSettled(readCards, scroll, options = {}) {
   const stablePasses = options.stablePasses ?? 2;
   const maxPasses = options.maxPasses ?? 100;
+  const waitAfterScroll = options.waitAfterScroll ?? (async () => {});
   const all = [];
   const seen = new Set();
   let stable = 0;
@@ -46,6 +47,7 @@ export async function collectUntilSettled(readCards, scroll, options = {}) {
     else stable = 0;
     if (stable >= stablePasses || (result?.atEnd && all.length === before)) return all;
     await scroll();
+    await waitAfterScroll();
   }
 
   return all;

@@ -71,3 +71,27 @@ async def test_reapplying_retained_item_updates_without_duplicate(
 
     assert first.created == 1
     assert second.updated == 1
+
+
+@pytest.mark.asyncio
+async def test_empty_size_and_color_match_missing_retailer_metadata(
+    db_session: AsyncSession, test_user, tmp_path: Path
+):
+    image_path = tmp_path / "shirt.jpg"
+    Image.new("RGB", (10, 10), color="blue").save(image_path)
+    service = RetailerImportService(db_session)
+    base = {
+        "retailer": "zalando",
+        "retailer_product_id": "shirt-1",
+        "image_path": image_path.name,
+    }
+
+    first = await service.apply(test_user.id, tmp_path, [base])
+    second = await service.apply(
+        test_user.id,
+        tmp_path,
+        [{**base, "purchased_size": "", "purchased_color": ""}],
+    )
+
+    assert first.created == 1
+    assert second.updated == 1

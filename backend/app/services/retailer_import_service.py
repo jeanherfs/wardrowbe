@@ -72,9 +72,11 @@ class RetailerImportService:
                     user_id,
                     item.retailer.value,
                     item.retailer_product_id,
-                    item.purchased_size,
-                    item.purchased_color,
+                    item.purchased_size or None,
+                    item.purchased_color or None,
                 )
+                purchased_size = item.purchased_size or None
+                purchased_color = item.purchased_color or None
                 data = ItemCreate(
                     type="unknown",
                     name=item.name,
@@ -82,8 +84,8 @@ class RetailerImportService:
                     retailer=item.retailer,
                     retailer_product_id=item.retailer_product_id,
                     source_url=str(item.source_url) if item.source_url else None,
-                    purchased_size=item.purchased_size,
-                    purchased_color=item.purchased_color,
+                    purchased_size=purchased_size,
+                    purchased_color=purchased_color,
                     return_status=item.return_status,
                     purchase_date=item.purchase_date,
                 )
@@ -96,8 +98,8 @@ class RetailerImportService:
                             retailer=item.retailer,
                             retailer_product_id=item.retailer_product_id,
                             source_url=str(item.source_url) if item.source_url else None,
-                            purchased_size=item.purchased_size,
-                            purchased_color=item.purchased_color,
+                            purchased_size=purchased_size,
+                            purchased_color=purchased_color,
                             return_status=item.return_status,
                             purchase_date=item.purchase_date,
                         ),

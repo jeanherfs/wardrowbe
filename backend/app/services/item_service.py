@@ -187,6 +187,11 @@ class ItemService:
         purchased_size: str | None,
         purchased_color: str | None,
     ) -> ClothingItem | None:
+        # Browser collectors commonly emit empty strings for fields that are
+        # absent on a retailer card. Treat those as SQL NULL so a rerun does
+        # not create a duplicate of an older import that omitted the field.
+        purchased_size = purchased_size or None
+        purchased_color = purchased_color or None
         result = await self.db.execute(
             select(ClothingItem)
             .where(

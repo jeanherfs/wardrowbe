@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { collectZalandoCards, classifyZalandoCategory } from '../collect_zalando.mjs';
+import { collectZalandoCards, collectZalandoOrders, classifyZalandoCategory } from '../collect_zalando.mjs';
 import { collectMangoPurchases } from '../collect_mango.mjs';
 import { collectUntilSettled, identityKey } from '../collect_all.mjs';
 import { buildOptimizationPrompt, optimizationTargets } from '../optimize_images.mjs';
@@ -41,6 +41,34 @@ test('maps Zalando cards and preserves duplicate size/color identities', () => {
   assert.equal(rows[0].retailer_product_id, 'shirt-1');
   assert.equal(rows[0].purchased_size, 'M');
   assert.equal(rows[1].category, 'underwear');
+});
+
+test('maps Zalando order-history rows and preserves return status', () => {
+  const rows = collectZalandoOrders([
+    {
+      sourceUrl: 'https://www.zalando.nl/example-shirt-1.html',
+      imageUrl: 'https://img.example/shirt-1.jpg',
+      brand: 'Example',
+      name: 'Oxford shirt',
+      size: 'M',
+      returned: false,
+      purchaseDate: '2026-06-11',
+    },
+    {
+      sourceUrl: 'https://www.zalando.nl/example-shirt-1.html',
+      imageUrl: 'https://img.example/shirt-1.jpg',
+      brand: 'Example',
+      name: 'Oxford shirt',
+      size: 'M',
+      returned: true,
+      purchaseDate: '2026-06-11',
+    },
+  ]);
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].retailer_product_id, 'example-shirt-1');
+  assert.equal(rows[0].return_status, 'kept');
+  assert.equal(rows[0].purchase_date, '2026-06-11');
 });
 
 test('maps Mango returned labels and retained purchases', () => {
@@ -103,6 +131,19 @@ test('collects pages until two consecutive scrolls add no new identities', async
   );
   assert.deepEqual(cards.map((card) => card.productId), ['a', 'b', 'c']);
   assert.equal(scrolls, 3);
+});
+
+test('waits after each scroll so delayed lazy-load requests can settle', async () => {
+  let reads = 0;
+  let waits = 0;
+  const pages = [[{ productId: 'a' }], [{ productId: 'a' }, { productId: 'b' }], [{ productId: 'a' }, { productId: 'b' }]];
+  const cards = await collectUntilSettled(
+    async () => pages[Math.min(reads++, pages.length - 1)],
+    async () => {},
+    { stablePasses: 1, waitAfterScroll: async () => { waits += 1; } },
+  );
+  assert.deepEqual(cards.map((card) => card.productId), ['a', 'b']);
+  assert.equal(waits, 2);
 });
 
 test('builds a conservative catalog-image optimization prompt', () => {

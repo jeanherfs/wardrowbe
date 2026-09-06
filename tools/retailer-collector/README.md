@@ -8,6 +8,18 @@ For Zalando, collect brand, title, size, product link, product ID from the link,
 and the visible image. Classify `boxers`, `boxershorts`, `underwear`, and
 `accessories` as the category so the importer skips them.
 
+### Complete Zalando history
+
+The wardrobe grid can expose only a recent lazy-loaded slice even when the
+account overview reports a much larger owned-item total. For a complete import,
+use the visible `Bestellingen` (orders) page and its year selector. Select every
+year from newest to oldest, wait for the order cards to settle, and collect each
+product card's link, image, brand, name, and `Maat`. Mark a card as returned when
+its visible text contains `Geretourneerd` and pass all years through
+`collectZalandoOrders`. It deduplicates by product, size, and colour and prefers
+a kept purchase when the same identity appears in both a returned and retained
+order.
+
 For Mango purchase details, use the visible `REF.` as `retailer_product_id`, the
 displayed size and colour, purchase date and product link. Map a visible
 `Teruggekeerd` label to `return_status: "returned"`; those entries are skipped.
@@ -15,11 +27,12 @@ displayed size and colour, purchase date and product link. Map a visible
 ## Lazy loading and image optimization
 
 Retailer pages are lazy-loaded. Read the rendered cards, scroll to the bottom,
-wait for new cards, and repeat until two consecutive bottom checks add no new
+wait for the retailer's request to settle, and repeat until two consecutive bottom checks add no new
 `retailer_product_id + purchased_size + purchased_color` identities. Do not use
 the number of DOM nodes as the count: some pages render the same card twice.
 `collect_all.mjs` provides the tested `collectUntilSettled` and identity helpers;
-the retailer-specific mappers deduplicate with the same key.
+pass its `waitAfterScroll` callback when the browser loads a delayed batch. The
+retailer-specific mappers deduplicate with the same key.
 
 After collection, run retained clothing images through an image-edit provider
 using `optimize_images.mjs`'s `buildOptimizationPrompt`. The edit must center
