@@ -187,6 +187,87 @@ release_import_manifest() {
     --image-root /imports/images
 }
 
+release_env_value() {
+  local key="$1"
+  awk -F= -v key="$key" '$1 == key {sub(/^[^=]*=/, ""); print; exit}' "$release_env"
+}
+
+release_wait_for_postgres() {
+  local db_user
+  db_user="$(release_env_value POSTGRES_USER)"
+  for _ in {1..30}; do
+    if release_compose exec -T postgres pg_isready -U "$db_user" >/dev/null 2>&1; then
+      return
+    fi
+    sleep 2
+  done
+  say_die "the release database did not become ready"
+}
+
+release_backup() {
+  local backup_dir="${1:-}"
+  [[ -n "$backup_dir" && $# -eq 1 ]] || say_die "backup requires exactly one directory"
+  ensure_docker
+  release_ensure_env
+  mkdir -p "$backup_dir"
+  local db_user db_name
+  db_user="$(release_env_value POSTGRES_USER)"
+  db_name="$(release_env_value POSTGRES_DB)"
+  release_compose up -d postgres >/dev/null
+  release_wait_for_postgres
+  say_step "exporting release database"
+  release_compose exec -T postgres pg_dump -U "$db_user" -d "$db_name" --format=custom > "$backup_dir/wardrowbe.dump"
+  say_step "exporting release uploads"
+  docker run --rm -v wardrobe_release_uploads:/data -v "$(cd "$backup_dir" && pwd):/backup" alpine \
+    tar -czf /backup/uploads.tar.gz -C /data .
+  awk -F= '{
+    key=$1
+    if (key ~ /PASSWORD|SECRET|TOKEN|KEY/) print key "=REDACTED"
+    else print $0
+  }' "$release_env" > "$backup_dir/release.env.example"
+  chmod 600 "$backup_dir/wardrowbe.dump" "$backup_dir/uploads.tar.gz" "$backup_dir/release.env.example"
+  say_ok "release backup written to $backup_dir"
+}
+
+release_restore() {
+  local backup_dir="${1:-}"
+  local force=false
+  if [[ "$backup_dir" == "--force-empty-target" ]]; then
+    force=true
+    backup_dir="${2:-}"
+    shift
+  fi
+  [[ -n "$backup_dir" && $# -le 1 ]] || say_die "restore requires DIRECTORY, optionally preceded by --force-empty-target"
+  [[ -f "$backup_dir/wardrowbe.dump" && -f "$backup_dir/uploads.tar.gz" ]] || say_die "restore requires wardrowbe.dump and uploads.tar.gz"
+  ensure_docker
+  release_ensure_env
+  local db_user db_name table_count
+  db_user="$(release_env_value POSTGRES_USER)"
+  db_name="$(release_env_value POSTGRES_DB)"
+  release_compose up -d postgres >/dev/null
+  release_wait_for_postgres
+  table_count="$(release_compose exec -T postgres psql -U "$db_user" -d "$db_name" -Atc \
+    "SELECT COUNT(*) FROM pg_tables WHERE schemaname = 'public'")"
+  if [[ "$table_count" != "0" && "$force" != true ]]; then
+    say_die "release database is not empty; pass --force-empty-target to restore"
+  fi
+  release_compose stop frontend backend worker >/dev/null 2>&1 || true
+  say_step "restoring release database"
+  release_compose exec -T postgres pg_restore --clean --if-exists --no-owner --exit-on-error \
+    -U "$db_user" -d "$db_name" < "$backup_dir/wardrowbe.dump"
+  say_step "restoring release uploads"
+  if [[ "$force" == true ]]; then
+    docker run --rm -v wardrobe_release_uploads:/data -v "$(cd "$backup_dir" && pwd):/backup" alpine \
+      sh -c 'find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -xzf /backup/uploads.tar.gz -C /data'
+  else
+    docker run --rm -v wardrobe_release_uploads:/data -v "$(cd "$backup_dir" && pwd):/backup" alpine \
+      tar -xzf /backup/uploads.tar.gz -C /data
+  fi
+  release_compose up -d
+  release_migrations
+  say_ok "release backup restored from $backup_dir"
+}
+
 install_docker() {
   case "$(uname -s)" in
     Darwin)
@@ -320,6 +401,8 @@ case "$command" in
       migrate) ensure_docker; release_ensure_env; release_migrations ;;
       bootstrap) ensure_docker; release_ensure_env; release_bootstrap "$@" ;;
       import) release_import_manifest "$@" ;;
+      backup) release_backup "$@" ;;
+      restore) release_restore "$@" ;;
       *) say_die "unknown release command: $release_command" ;;
     esac
     ;;
