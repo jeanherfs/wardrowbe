@@ -1,5 +1,7 @@
+import { dedupeCards } from './collect_all.mjs';
+
 export function collectMangoPurchases(purchases) {
-  return purchases.map((purchase) => ({
+  return dedupeCards(purchases).map((purchase) => ({
     retailer: 'mango',
     retailer_product_id: String(purchase.ref || purchase.productId),
     image_path: purchase.imagePath || '',

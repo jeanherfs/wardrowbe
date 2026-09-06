@@ -1,3 +1,5 @@
+import { dedupeCards } from './collect_all.mjs';
+
 const EXCLUDED_ACCESSORY_WORDS = ['accessor', 'accessoire', 'belt', 'bag', 'bril', 'hoed', 'jewellery', 'jewelry', 'pet', 'portemonnee', 'riem', 'scarf', 'sjaal', 'tas', 'wallet', 'zonnebril'];
 const EXCLUDED_UNDERWEAR_WORDS = ['underwear', 'boxer', 'boxershort', 'brief', 'lingerie', 'ondergoed', 'socks'];
 
@@ -9,9 +11,9 @@ export function classifyZalandoCategory(card) {
 }
 
 export function collectZalandoCards(cards) {
-  return cards.map((card) => ({
+  return dedupeCards(cards).map((card) => ({
     retailer: 'zalando',
-    retailer_product_id: String(card.productId || card.id || card.sourceUrl),
+    retailer_product_id: String(card.productId || card.id || card.sourceUrl || card.imageUrl),
     image_path: card.imagePath || '',
     category: classifyZalandoCategory(card),
     name: card.name || card.title || '',
