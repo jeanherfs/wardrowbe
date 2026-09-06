@@ -1,0 +1,112 @@
+name: wardrobe-release
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-wardrobe}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.release}
+      POSTGRES_DB: ${POSTGRES_DB:-wardrobe}
+    volumes:
+      - wardrobe_release_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wardrobe}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - wardrobe_release_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    environment:
+      DEBUG: "false"
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-wardrobe}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wardrobe}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env.release}
+      CORS_ORIGINS: '["http://localhost:8080"]'
+      STORAGE_PATH: /data/wardrobe
+      AI_INTERNAL_ENABLED: ${AI_INTERNAL_ENABLED:-false}
+      LOCAL_AUTH_ENABLED: ${LOCAL_AUTH_ENABLED:-true}
+      LOCAL_AUTH_BOOTSTRAP_TOKEN: ${LOCAL_AUTH_BOOTSTRAP_TOKEN:?Set LOCAL_AUTH_BOOTSTRAP_TOKEN in .env.release}
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+    volumes:
+      - wardrobe_release_uploads:/data/wardrobe
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: arq app.workers.worker.WorkerSettings
+    environment:
+      DEBUG: "false"
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-wardrobe}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wardrobe}
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_PATH: /data/wardrobe
+      AI_INTERNAL_ENABLED: ${AI_INTERNAL_ENABLED:-false}
+    volumes:
+      - wardrobe_release_uploads:/data/wardrobe
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:8080}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Set NEXTAUTH_SECRET in .env.release}
+      BACKEND_URL: http://backend:8000
+      LOCAL_AUTH_ENABLED: ${LOCAL_AUTH_ENABLED:-true}
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+    ports:
+      - "127.0.0.1:8080:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  wardrobe_release_postgres:
+    name: wardrobe_release_postgres
+  wardrobe_release_redis:
+    name: wardrobe_release_redis
+  wardrobe_release_uploads:
+    name: wardrobe_release_uploads
