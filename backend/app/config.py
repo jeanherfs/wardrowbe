@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     oidc_client_secret: str | None = None
     oidc_mobile_client_id: str | None = None
     oidc_ca_bundle: str | None = Field(default=None)
+    local_auth_enabled: bool = False
+    local_auth_bootstrap_token: str | None = None
 
     # AI capability switches.
     # ai_internal_enabled is the master switch; ai_vision_enabled / ai_text_enabled
@@ -146,10 +148,10 @@ class Settings(BaseSettings):
 
         oidc_configured = oidc_issuer and oidc_client
         is_dev = self.debug and not oidc_configured
-        if not oidc_configured and not is_dev:
+        if not oidc_configured and not is_dev and not self.local_auth_enabled:
             return (
-                "No authentication method configured. "
-                "Set OIDC_ISSUER_URL + OIDC_CLIENT_ID, or enable DEBUG mode."
+                "No authentication method configured. Set OIDC_ISSUER_URL + OIDC_CLIENT_ID, "
+                "enable LOCAL_AUTH_ENABLED, or enable DEBUG mode."
             )
 
         return None
@@ -157,6 +159,8 @@ class Settings(BaseSettings):
     def get_auth_mode(self) -> str:
         if self.oidc_issuer_url and self.oidc_client_id:
             return "oidc"
+        if self.local_auth_enabled:
+            return "local"
         if self.debug:
             return "dev"
         return "unknown"

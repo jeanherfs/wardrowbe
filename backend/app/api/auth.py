@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
+from secrets import compare_digest
 from typing import Annotated
 from urllib.parse import urlencode
+from uuid import uuid4
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -18,6 +20,8 @@ from app.schemas.user import (
     UserSyncRequest,
     UserSyncResponse,
 )
+from app.schemas.auth import LocalAuthResponse, LocalBootstrapRequest, LocalLoginRequest
+from app.services.local_auth_service import LocalAuthService
 from app.services.user_service import UserEmailConflictError, UserService
 from app.utils.auth import get_current_user
 from app.utils.oidc import validate_oidc_id_token
@@ -89,6 +93,93 @@ async def auth_status() -> AuthStatusResponse:
             ),
         )
     return AuthStatusResponse(configured=True, mode=mode)
+
+
+def _local_auth_available() -> None:
+    if not settings.local_auth_enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+
+@router.post("/local-login", response_model=LocalAuthResponse)
+async def local_login(
+    request: Request,
+    credentials: LocalLoginRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> LocalAuthResponse:
+    _local_auth_available()
+    await rate_limit_by_ip(request, "local_login", 10, 60)
+
+    user_service = UserService(db)
+    user = await user_service.get_by_email(credentials.email.lower().strip())
+    valid = bool(user and user.password_hash and LocalAuthService.verify_password(credentials.password, user.password_hash))
+    if not valid or not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    await user_service.update_last_login(user)
+    await db.commit()
+    return LocalAuthResponse(
+        id=user.id,
+        email=user.email,
+        display_name=user.display_name,
+        external_id=user.external_id,
+        access_token=create_access_token(user.external_id),
+    )
+
+
+@router.post("/local-bootstrap", response_model=LocalAuthResponse, status_code=status.HTTP_201_CREATED)
+async def local_bootstrap(
+    request: Request,
+    bootstrap: LocalBootstrapRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> LocalAuthResponse:
+    _local_auth_available()
+    expected_token = settings.local_auth_bootstrap_token
+    supplied_token = request.headers.get("X-Local-Bootstrap-Token", "")
+    if not expected_token or not compare_digest(supplied_token, expected_token):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid bootstrap token")
+
+    user_service = UserService(db)
+    email = bootstrap.email.lower().strip()
+    user = await user_service.get_by_email(email)
+    if user and not bootstrap.reset_password:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User already exists")
+
+    if user:
+        user.display_name = bootstrap.display_name
+        user.password_hash = LocalAuthService.hash_password(bootstrap.password)
+        await db.commit()
+        await db.refresh(user)
+        return LocalAuthResponse(
+            id=user.id,
+            email=user.email,
+            display_name=user.display_name,
+            external_id=user.external_id,
+            access_token=create_access_token(user.external_id),
+        )
+
+    from app.models.user import User
+
+    user = User(
+        external_id=bootstrap.external_id or f"local-{uuid4()}",
+        email=email,
+        display_name=bootstrap.display_name,
+        password_hash=LocalAuthService.hash_password(bootstrap.password),
+        last_login_at=datetime.utcnow(),
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return LocalAuthResponse(
+        id=user.id,
+        email=user.email,
+        display_name=user.display_name,
+        external_id=user.external_id,
+        access_token=create_access_token(user.external_id),
+    )
 
 
 @router.post("/sync", response_model=UserSyncResponse)
