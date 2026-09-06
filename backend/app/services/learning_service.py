@@ -1005,7 +1005,8 @@ class LearningService:
         """Generate human-readable insights about the user's style."""
         profile = await self._get_or_create_profile(user_id)
 
-        if not profile.last_computed_at or profile.feedback_count < self.MIN_FEEDBACK_FOR_LEARNING:
+        data_points = (profile.feedback_count or 0) + (profile.items_rated or 0)
+        if not profile.last_computed_at or data_points < self.MIN_FEEDBACK_FOR_LEARNING:
             return []
 
         insights = []
@@ -1101,6 +1102,111 @@ class LearningService:
                         expires_at=expiry,
                     )
                 )
+
+        # Direct item ratings explain both what fits and what matches the user's
+        # taste. Keep these facts explicit so the UI can show why a prediction
+        # was made, even when the user has not rated an outfit yet.
+        if profile.items_rated >= 3:
+            item_count = profile.items_rated
+            confidence = Decimal(str(min(0.95, 0.5 + min(item_count, 5) * 0.08)))
+
+            if profile.average_item_fit is not None:
+                fit_average = float(profile.average_item_fit)
+                fit_direction = "well" if fit_average >= 3.5 else "less well"
+                insights.append(
+                    StyleInsight(
+                        user_id=user_id,
+                        category="item",
+                        insight_type="pattern",
+                        title=f"Your best fit averages {fit_average:.1f}/5",
+                        description=(
+                            f"Across {item_count} rated items, you report that these garments fit "
+                            f"{fit_direction}. Use fit ratings to improve size and cut recommendations."
+                        ),
+                        confidence=confidence,
+                        supporting_data={
+                            "dimension": "fit",
+                            "average": fit_average,
+                            "items_rated": item_count,
+                        },
+                        expires_at=expiry,
+                    )
+                )
+
+            if profile.average_item_style is not None:
+                style_average = float(profile.average_item_style)
+                style_direction = "strongly matches" if style_average >= 3.5 else "matches less"
+                insights.append(
+                    StyleInsight(
+                        user_id=user_id,
+                        category="item",
+                        insight_type="positive" if style_average >= 3.5 else "suggestion",
+                        title=f"Your style ratings average {style_average:.1f}/5",
+                        description=(
+                            f"Your {item_count} item ratings show which garments {style_direction} "
+                            "your taste. We use this signal alongside colors, brands, and types."
+                        ),
+                        confidence=confidence,
+                        supporting_data={
+                            "dimension": "style",
+                            "average": style_average,
+                            "items_rated": item_count,
+                        },
+                        expires_at=expiry,
+                    )
+                )
+
+            if profile.learned_type_scores:
+                top_type, type_score = max(
+                    profile.learned_type_scores.items(), key=lambda entry: entry[1]
+                )
+                if type_score > 0.2:
+                    insights.append(
+                        StyleInsight(
+                            user_id=user_id,
+                            category="item",
+                            insight_type="positive",
+                            title=f"You tend to like {top_type}s",
+                            description=(
+                                f"Your ratings for {top_type} items are above neutral. "
+                                "We will prioritize this type when building suggestions."
+                            ),
+                            confidence=confidence,
+                            supporting_data={
+                                "dimension": "type",
+                                "value": top_type,
+                                "score": type_score,
+                                "items_rated": item_count,
+                            },
+                            expires_at=expiry,
+                        )
+                    )
+
+            if profile.learned_brand_scores:
+                top_brand, brand_score = max(
+                    profile.learned_brand_scores.items(), key=lambda entry: entry[1]
+                )
+                if brand_score > 0.2:
+                    insights.append(
+                        StyleInsight(
+                            user_id=user_id,
+                            category="item",
+                            insight_type="positive",
+                            title=f"{top_brand} is a strong match",
+                            description=(
+                                f"Your rated {top_brand} items score above neutral. "
+                                "This brand signal will help refine future recommendations."
+                            ),
+                            confidence=confidence,
+                            supporting_data={
+                                "dimension": "brand",
+                                "value": top_brand,
+                                "score": brand_score,
+                                "items_rated": item_count,
+                            },
+                            expires_at=expiry,
+                        )
+                    )
 
         # Save insights to database
         for insight in insights:

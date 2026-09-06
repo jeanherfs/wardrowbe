@@ -367,6 +367,12 @@ class RecommendationService:
             if learned_prefs.get("learned_preferred_styles"):
                 styles = learned_prefs["learned_preferred_styles"]
                 lines.append(f"- Learned preferred styles: {', '.join(styles)}")
+            if learned_prefs.get("learned_preferred_types"):
+                types = learned_prefs["learned_preferred_types"]
+                lines.append(f"- Learned preferred item types: {', '.join(types)}")
+            if learned_prefs.get("learned_preferred_brands"):
+                brands = learned_prefs["learned_preferred_brands"]
+                lines.append(f"- Learned preferred brands: {', '.join(brands)}")
 
             if occasion and learned_prefs.get("occasion_insights"):
                 occ_data = learned_prefs["occasion_insights"].get(occasion)
@@ -431,6 +437,24 @@ class RecommendationService:
             )[:3]
             if liked_styles:
                 preferences["learned_preferred_styles"] = [s for s, _ in liked_styles]
+
+        if profile.learned_type_scores:
+            liked_types = sorted(
+                [(item_type, score) for item_type, score in profile.learned_type_scores.items() if score > 0.2],
+                key=lambda x: x[1],
+                reverse=True,
+            )[:5]
+            if liked_types:
+                preferences["learned_preferred_types"] = [item_type for item_type, _ in liked_types]
+
+        if profile.learned_brand_scores:
+            liked_brands = sorted(
+                [(brand, score) for brand, score in profile.learned_brand_scores.items() if score > 0.2],
+                key=lambda x: x[1],
+                reverse=True,
+            )[:5]
+            if liked_brands:
+                preferences["learned_preferred_brands"] = [brand for brand, _ in liked_brands]
 
         if occasion and profile.learned_occasion_patterns:
             occ_data = profile.learned_occasion_patterns.get(occasion)

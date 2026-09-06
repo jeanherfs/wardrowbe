@@ -166,6 +166,32 @@ function ColorPreferenceBar({ colorScore }: { colorScore: LearnedColorScore }) {
   );
 }
 
+function AttributePreferenceBar({
+  value,
+  score,
+}: {
+  value: string;
+  score: number;
+}) {
+  const isPositive = score >= 0;
+  const percentage = Math.min(100, Math.abs(score) * 100);
+
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="capitalize truncate" title={value}>{value}</span>
+      <div className="flex items-center gap-2">
+        <Progress
+          value={percentage}
+          className={`w-24 h-2 ${isPositive ? '' : '[&>div]:bg-red-500'}`}
+        />
+        <span className="text-sm text-muted-foreground w-12 text-right tabular-nums">
+          {isPositive ? '+' : ''}{(score * 100).toFixed(0)}%
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function ItemPairCard({ pair }: { pair: ItemPair }) {
   const t = useTranslations('learning');
   const successRate = pair.times_paired > 0
@@ -398,7 +424,7 @@ export default function LearningPage() {
       ) : (
         <>
           {/* Stats Cards */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
             <StatCard
               title={t('stats.feedbackGiven')}
               value={profile.feedback_count}
@@ -428,10 +454,20 @@ export default function LearningPage() {
               description={profile.average_style_rating ? t('stats.styleSatisfaction') : t('stats.rateOutfitStyles')}
               icon={Heart}
             />
+            <StatCard
+              title="Item ratings"
+              value={profile.items_rated}
+              description={
+                profile.average_item_fit !== null || profile.average_item_style !== null
+                  ? `Fit ${profile.average_item_fit?.toFixed(1) ?? '-'} · Style ${profile.average_item_style?.toFixed(1) ?? '-'}`
+                  : 'Rate fit and style on wardrobe items'
+              }
+              icon={Shirt}
+            />
           </div>
 
           {/* Active Insights */}
-          {insights.length > 0 && (
+          {profile.has_learning_data && (
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
@@ -447,15 +483,21 @@ export default function LearningPage() {
                 </Button>
               </CardHeader>
               <CardContent>
-                <div className="grid gap-3 md:grid-cols-2">
-                  {insights.map((insight) => (
-                    <InsightCard
-                      key={insight.id}
-                      insight={insight}
-                      onAcknowledge={handleAcknowledgeInsight}
-                    />
-                  ))}
-                </div>
+                {insights.length > 0 ? (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {insights.map((insight) => (
+                      <InsightCard
+                        key={insight.id}
+                        insight={insight}
+                        onAcknowledge={handleAcknowledgeInsight}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No predictions yet. Generate insights to see what your ratings say about your style.
+                  </p>
+                )}
               </CardContent>
             </Card>
           )}
@@ -526,6 +568,46 @@ export default function LearningPage() {
               </CardContent>
             </Card>
           </div>
+
+          {(profile.type_preferences.length > 0 || profile.brand_preferences.length > 0) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Brain className="h-5 w-5" />
+                  Item preferences
+                </CardTitle>
+                <CardDescription>
+                  Learned from your fit and style ratings; positive values are predicted matches.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-6 md:grid-cols-2">
+                {profile.type_preferences.length > 0 && (
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-medium">Types</h4>
+                    {profile.type_preferences.slice(0, 8).map((preference) => (
+                      <AttributePreferenceBar
+                        key={preference.value}
+                        value={preference.value}
+                        score={preference.score}
+                      />
+                    ))}
+                  </div>
+                )}
+                {profile.brand_preferences.length > 0 && (
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-medium">Brands</h4>
+                    {profile.brand_preferences.slice(0, 8).map((preference) => (
+                      <AttributePreferenceBar
+                        key={preference.value}
+                        value={preference.value}
+                        score={preference.score}
+                      />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Best Item Pairs */}
           {best_pairs.length > 0 && (
