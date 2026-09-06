@@ -674,7 +674,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Storage for clothing photos
 
 Works great on a Raspberry Pi 5!
-# Local Ollama enrichment
+
+## Local Ollama enrichment
 
 Retailer imports can enrich missing clothing metadata locally. Install Ollama,
 then run `ollama pull qwen3-vl:8b`. Release Docker defaults to
