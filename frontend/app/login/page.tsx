@@ -23,7 +23,7 @@ function OIDCLoginButton({ callbackUrl }: { callbackUrl: string }) {
 }
 
 function CredentialsLogin({ callbackUrl, local }: { callbackUrl: string; local: boolean }) {
-  const [email, setEmail] = useState('dev@wardrobe.local');
+  const [email, setEmail] = useState(local ? '' : 'dev@wardrobe.local');
   const [name, setName] = useState('Dev User');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -44,7 +44,7 @@ function CredentialsLogin({ callbackUrl, local }: { callbackUrl: string; local: 
       <div className="rounded-md bg-yellow-500/10 border border-yellow-500/20 p-3 text-sm text-yellow-600 dark:text-yellow-400">
         {local ? t('localMode') : t('devMode')}
       </div>
-      {!local && <div className="space-y-2">
+      <div className="space-y-2">
         <label htmlFor="email" className="block text-sm font-medium">
           {t('email')}
         </label>
@@ -57,7 +57,7 @@ function CredentialsLogin({ callbackUrl, local }: { callbackUrl: string; local: 
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           placeholder="dev@example.com"
         />
-      </div>}
+      </div>
       {local && <div className="space-y-2">
         <label htmlFor="password" className="block text-sm font-medium">
           {t('password')}
@@ -72,7 +72,7 @@ function CredentialsLogin({ callbackUrl, local }: { callbackUrl: string; local: 
           autoComplete="current-password"
         />
       </div>}
-      <div className="space-y-2">
+      {!local && <div className="space-y-2">
         <label htmlFor="name" className="block text-sm font-medium">
           {t('displayName')}
         </label>
@@ -84,7 +84,7 @@ function CredentialsLogin({ callbackUrl, local }: { callbackUrl: string; local: 
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           placeholder={t('namePlaceholder')}
         />
-      </div>
+      </div>}
       <button
         type="submit"
         disabled={isLoading}

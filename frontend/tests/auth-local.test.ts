@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { createElement } from 'react'
 
 describe('local credentials provider', () => {
   beforeEach(() => {
@@ -39,5 +41,18 @@ describe('local credentials provider', () => {
       'http://backend:8000/api/v1/auth/local-login',
       expect.objectContaining({ method: 'POST' }),
     )
+  })
+
+  it('shows the email field and hides display name in local mode', async () => {
+    const { default: LoginPage } = await import('@/app/login/page')
+    vi.mocked(global.fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({ configured: true, mode: 'local' }),
+    } as Response)
+
+    render(createElement(LoginPage))
+
+    expect(await screen.findByLabelText('email')).toBeInTheDocument()
+    expect(screen.queryByLabelText('displayName')).not.toBeInTheDocument()
   })
 })
