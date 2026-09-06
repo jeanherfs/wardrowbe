@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
 
@@ -31,6 +32,7 @@ class RetailerImportItem(BaseModel):
     purchased_color: str | None = Field(default=None, max_length=100)
     return_status: ReturnStatus = ReturnStatus.kept
     purchase_date: date | None = None
+    purchase_price: Decimal | None = Field(default=None, ge=0)
 
 
 @dataclass
@@ -94,6 +96,7 @@ class RetailerImportService:
                     purchased_color=purchased_color,
                     return_status=item.return_status,
                     purchase_date=item.purchase_date,
+                    purchase_price=item.purchase_price,
                 )
                 if existing:
                     await self.items.update(
@@ -108,8 +111,10 @@ class RetailerImportService:
                             purchased_color=purchased_color,
                             return_status=item.return_status,
                             purchase_date=item.purchase_date,
+                            purchase_price=item.purchase_price,
                         ),
                     )
+                    await self.db.commit()
                     summary.updated += 1
                     continue
 

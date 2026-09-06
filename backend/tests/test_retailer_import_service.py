@@ -1,9 +1,13 @@
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from PIL import Image
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.item import ClothingItem
 from app.services.retailer_import_service import RetailerImportService
 
 
@@ -95,3 +99,45 @@ async def test_empty_size_and_color_match_missing_retailer_metadata(
 
     assert first.created == 1
     assert second.updated == 1
+
+
+@pytest.mark.asyncio
+async def test_existing_import_update_commits_purchase_metadata(
+    db_session: AsyncSession, test_user, tmp_path: Path
+):
+    image_path = tmp_path / "coat.jpg"
+    Image.new("RGB", (10, 10), color="black").save(image_path)
+    service = RetailerImportService(db_session)
+    user_id = test_user.id
+    base = {
+        "retailer": "mango",
+        "retailer_product_id": "coat-1",
+        "image_path": image_path.name,
+        "name": "Coat",
+        "purchased_size": "M",
+        "purchased_color": "Black",
+    }
+
+    await service.apply(user_id, tmp_path, [base | {"purchase_date": "2025-01-02"}])
+    await service.apply(
+        user_id,
+        tmp_path,
+        [
+            base
+            | {
+                "purchase_date": "2025-02-03",
+                "purchase_price": 129.95,
+            }
+        ],
+    )
+    await db_session.rollback()
+
+    item = await db_session.scalar(
+        select(ClothingItem).where(
+            ClothingItem.user_id == user_id,
+            ClothingItem.retailer_product_id == "coat-1",
+        )
+    )
+    assert item is not None
+    assert item.purchase_date == date(2025, 2, 3)
+    assert item.purchase_price == Decimal("129.95")
